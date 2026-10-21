@@ -416,8 +416,8 @@ namespace Gallop.Live.Cutt
             //不遍历所有 worksheet,避免同名LaserA/LaserB轨道在同一帧互相覆盖。
             AlterUpdate_BgColor2(camSheet, _currentFrame);
 
-            OriginalCompositeBridge?.CompleteFrame();
             _isNowAlterUpdate = false;
+            OriginalCompositeBridge?.CompleteFrame();
 
             if (IsRecordVMD)
             {
