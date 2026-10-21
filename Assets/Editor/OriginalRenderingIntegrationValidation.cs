@@ -15,15 +15,21 @@ using UnityEngine.SceneManagement;
 using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
 
 // Opt-in batch acceptance with artificial typed keys and generated geometry.
-// Uses the Fork's real Control/Director; never loads game assets or changes scenes.
+// Uses the Fork's real Control/Director in a transient scene; no saved scene or game asset is changed.
 public static class OriginalRenderingIntegrationValidation
 {
     [Serializable] sealed class Result
     {
         public string status = "Running", unity, graphics, failure, controlAssembly;
-        public int checks, builtinFrames, urpFrames, providerCalls;
+        public int checks, baselineChecks, builtinFrames, urpFrames, providerCalls;
+        public int cameraSelectionChecks, cameraSelectionBuiltinFrames, cameraSelectionUrpFrames;
+        public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public bool TestOnly = true, OriginalVerified = false, runtime_contract = false;
         public string Phase257cause = "Unknown", naturalSongPlayback = "NotTested";
+    }
+    [Serializable] sealed class CameraSelectionSample
+    {
+        public string pipeline, requested, selected, directorAtRender, directorAfterUpdate, center, status;
     }
     static Result result;
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
@@ -94,7 +100,9 @@ public static class OriginalRenderingIntegrationValidation
             Check(Application.isBatchMode, "Run acceptance only in its dedicated batch Editor.");
             Check(result.controlAssembly == "umamusume", "Actual Viewer assembly, not a Control stub.");
             Check(SystemInfo.graphicsDeviceType == GraphicsDeviceType.Direct3D11, "D3D11 device.");
-            Exercise(false); Exercise(true); result.status = "ActualControlIntegrationGPUValidated_TestOnly";
+            Exercise(false); Exercise(true);
+            result.baselineChecks = result.checks - result.cameraSelectionChecks;
+            result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
         File.WriteAllText(Path.Combine(output, "integration-summary.json"), JsonUtility.ToJson(result, true));
@@ -196,6 +204,7 @@ public static class OriginalRenderingIntegrationValidation
                 Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output, null))
             { Tick(control, 105, urp); Check(unknown.Session.RenderCount == 0 && unknown.Session.LastStatus == "UnresolvedDrawInputs" && Read(output).SequenceEqual(preserved), "Missing values remain Unknown without affecting existing output."); }
             Check(control.OriginalCompositeBridge == null && !(bool)Field("_isNowAlterUpdate").GetValue(control), "Existing Control finishes after registration disposal.");
+            ExerciseCameraSelection(control, director, sheet, urp);
         }
         finally
         {
@@ -205,6 +214,115 @@ public static class OriginalRenderingIntegrationValidation
             owned.Clear(); RenderTexture.active = oldActive; GL.sRGBWrite = oldSrgb;
             if (restoreScene) { SceneManager.SetActiveScene(oldScene); EditorSceneManager.CloseScene(fixtureScene, true); }
             Check(before == Resources.FindObjectsOfTypeAll<RenderTexture>().Count(r => r.name.StartsWith("Original.")) && !Resources.FindObjectsOfTypeAll<Camera>().Any(c => c.name == "Original.ExplicitCamera"), "Owned camera/RT cleanup: " + urp);
+        }
+    }
+    static void ExerciseCameraSelection(LiveTimelineControl control, Director director, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int firstCheck = result.checks;
+        Action<int> rememberSwitch = null;
+        try
+        {
+            // Execute the real Director subscription and index mapping. Reflection
+            // supplies scene references only; no replacement switch handler is used.
+            var colors = new[] { new Color32(180, 90, 20, 255), new Color32(20, 140, 50, 255),
+                new Color32(210, 180, 30, 255), new Color32(20, 180, 180, 255) };
+            var main = new Camera[4];
+            for (int i = 0; i < main.Length; i++)
+            {
+                int layer = i == 1 ? 10 : 11 + i;
+                main[i] = Configure(Go("Synthetic main camera " + i).AddComponent<Camera>(), layer);
+                if (i != 1) Geometry(layer, colors[i]);
+            }
+            typeof(Director).GetField("_cameraNodes", InstancePrivate).SetValue(director, main.Select(c => c.gameObject).ToArray());
+            typeof(Director).GetField("_enableMirrorReflection", InstancePrivate).SetValue(director, false);
+            director._liveTimelineControl = control; director.charaObjs = new List<Transform>(); director.charaAnims = new List<Animation>();
+            control.data.characterSettings = new LiveTimelineCharacterSettings { motionSequenceIndices = new int[0] };
+            control.data.multiCameraSettings = new LiveTimelineMultiCameraSettings { cameraNum = 2 };
+            director.InitializeTimeline(new List<LiveCharacterLoadData>(), 1);
+            var multi = control.GetComponentsInChildren<MultiCamera>(true);
+            Configure(multi[0].GetCamera(), 8); Configure(multi[1].GetCamera(), 9);
+            Check(Enumerable.Range(0, 3).All(i => ReferenceEquals(control.GetCamera(i).camera, main[i + 1])) &&
+                ReferenceEquals(director.MainCameraTransform, main[1].transform), "Real Director registers Control indices 0/1/2 as main cameras 1/2/3.");
+
+            int? selectedIndex = null; int eventVersion = 0, resolverVersion = 0;
+            bool switchDuringLateUpdate = false, resolverDuringLateUpdate = true;
+            Camera explicitFreeCamera = main[0], selected = null;
+            Transform directorAtRender = null;
+            rememberSwitch = index =>
+            {
+                selectedIndex = index; eventVersion++;
+                switchDuringLateUpdate = (bool)Field("_isNowAlterUpdate").GetValue(control);
+            };
+            control.OnUpdateCameraSwitcher += rememberSwitch;
+            var resolver = new OriginalLiveDrawInputResolver(selection =>
+                new OriginalLiveDrawInputResolver.Inputs(new A.DrawState(1, .1f, new Vector2(selection.TrackOrdinal == 0 ? .25f : -.25f, 0)),
+                    new A.TextureMapping(Identity, 1, Identity, 0)));
+            var output = Target(64, 32);
+            using (var registration = new OriginalLiveTimelineRegistration(control, 0, 1, _ =>
+            {
+                resolverVersion = eventVersion; directorAtRender = director.MainCameraTransform;
+                resolverDuringLateUpdate = (bool)Field("_isNowAlterUpdate").GetValue(control);
+                selected = !selectedIndex.HasValue ? null : selectedIndex.Value < 0 ? explicitFreeCamera : control.GetCamera(selectedIndex.Value)?.camera;
+                return selected;
+            }, Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output, resolver.Resolve))
+            {
+                var updateMain = typeof(Director).GetMethod("UpdateMainCamera", InstancePrivate);
+                Action tick = () =>
+                {
+                    Field("_currentFrame").SetValue(control, 105f); control.AlterLateUpdate();
+                    if (urp) result.cameraSelectionUrpFrames++; else result.cameraSelectionBuiltinFrames++;
+                };
+                var preserved = Read(output);
+                tick();
+                Check(eventVersion == 0 && selected == null && registration.Session.RenderCount == 0 &&
+                    registration.Session.LastStatus == "MissingSelectedCamera" && Read(output).SequenceEqual(preserved),
+                    "Before a switch notification, no default camera is invented and output is retained.");
+
+                var key = new LiveTimelineKeyCameraSwitcherData { frame = 100, cameraIndex = 0 };
+                sheet.cameraSwitcherKeys.thisList.Add(key);
+                foreach (int index in new[] { 0, 1, 2, -1 })
+                {
+                    key.cameraIndex = index;
+                    Camera expected = index < 0 ? main[0] : main[index + 1];
+                    Transform previousMain = director.MainCameraTransform;
+                    var states = main.Select(CameraState).ToArray();
+                    int renders = registration.Session.RenderCount, events = eventVersion;
+                    tick();
+                    Check(eventVersion == events + 1 && resolverVersion == eventVersion && switchDuringLateUpdate && !resolverDuringLateUpdate,
+                        "Switch notification precedes rendering after Control late-update completion: " + index);
+                    Check(ReferenceEquals(selected, expected) && registration.Session.RenderCount == renders + 1 && registration.Session.LastException == null,
+                        "Same-update selection uses exact Control camera or explicit free camera: " + index);
+                    var center = Read(output)[16 * 64 + 32];
+                    Check(center.Equals(colors[index < 0 ? 0 : index + 1]), "Selected base camera geometry reaches the GPU output in the same update: " + index +
+                        "; actual=" + center + "; expected=" + colors[index < 0 ? 0 : index + 1]);
+                    Check(ReferenceEquals(directorAtRender, previousMain) && ReferenceEquals(director.MainCameraTransform, previousMain) &&
+                        main.Select(CameraState).SequenceEqual(states), "Rendering leaves source cameras and the still-old Director main reference unchanged: " + index);
+                    updateMain.Invoke(director, null);
+                    Check(ReferenceEquals(director.MainCameraTransform, expected.transform) && main.All(c => c.gameObject.activeSelf == ReferenceEquals(c, expected)),
+                        "Real later UpdateMainCamera applies the switch, without moving the bridge notification: " + index);
+                    result.cameraSelection.Add(new CameraSelectionSample { pipeline = urp ? "URP14" : "Built-in", requested = index.ToString(),
+                        selected = selected.name, directorAtRender = directorAtRender.name, directorAfterUpdate = director.MainCameraTransform.name,
+                        center = center.ToString(), status = registration.Session.LastStatus });
+                }
+                // Invalid indices retain the Director's existing choice, but are
+                // unresolved for this explicitly supplied renderer selection.
+                foreach (int index in new[] { 99, -1 })
+                {
+                    key.cameraIndex = index;
+                    if (index < 0) explicitFreeCamera = null;
+                    preserved = Read(output); int renders = registration.Session.RenderCount;
+                    tick();
+                    Check(selected == null && registration.Session.RenderCount == renders && registration.Session.LastStatus == "MissingSelectedCamera" &&
+                        Read(output).SequenceEqual(preserved), "Invalid index or missing explicit free camera preserves output without fallback: " + index);
+                    updateMain.Invoke(director, null);
+                    Check(ReferenceEquals(director.MainCameraTransform, main[0].transform), "Original Director behavior is retained when explicit selection is unresolved: " + index);
+                }
+            }
+        }
+        finally
+        {
+            if (rememberSwitch != null) control.OnUpdateCameraSwitcher -= rememberSwitch;
+            result.cameraSelectionChecks += result.checks - firstCheck;
         }
     }
     static string CameraState(Camera c) => string.Join("|", c.enabled, c.targetTexture, c.fieldOfView, c.nearClipPlane, c.farClipPlane, c.cullingMask, c.rect, c.aspect, c.transform.position, c.transform.rotation);

@@ -75,7 +75,7 @@ scene・ProjectSettings・Packagesは変更せず、原作ゲームも起動し�
 |Forkへの移植|9クラス・2shader・最小timeline接続を実施|
 |公開済み描画ブランチのUnityプロジェクト全体|本家由来の構文エラーでコンパイル未完了。7コミットの状態を保持|
 |独立検証ブランチのmanaged／Editorコンパイル|Unity f3のbatch import終了コード0|
-|独立検証ブランチの9クラス結合|実Control＋人工typed key／geometryで42/42 PASS|
+|独立検証ブランチの9クラス結合|実Control＋人工typed key／geometryの42チェックとcamera選択52チェック、計94/94 PASS|
 |元Viewer通常ライブへの統合|未完了。自動採用しない|
 |全解像度・全frameでの原作一致|未証明|
 
@@ -106,3 +106,17 @@ S生成cameraの正式帰属、自然fade・回転helper、有効描画状態の
 [既存ロード経路の監査](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md) を追加しました。キャラクタ構築時のnative物理初期化は既存の物理OFFでは省略されず、評価済み描画値の自然providerも未接続です。また、bridge通知はDirectorのmain camera更新より前なので、下地cameraの選択方法には同一updateの切替を考慮する必要があります。
 
 これはソース監査の結果です。追加run・追加テスト・実装変更はなく、自然ライブ受入へ格上げしません。原作ゲームと隔離DLLは操作していません。
+
+## 同一updateの下地camera選択をGPU検証
+
+上記の静的監査後、同じ検証ブランチのUnity 2022.3.62f3／D3D11で **94/94チェックPASS**。従来の結合42件を再実行し、camera選択の52件を追加しました。Built-in／URP14それぞれ、従来7更新とcamera選択7更新です。
+
+- 実 `Director.InitializeTimeline` によるcamera登録と切替イベント購読を使用しました。DirectorのhandlerやControlをstubへ置換していません。
+- 実 `AlterLateUpdate` 内の切替通知からControlのcameraを選び、同じ呼出しで下地のGPU画像が切替先の色になることを確認しました。Control index 0／1／2と明示free cameraの4ケースを両pipelineで確認しています。
+- 切替時、bridge内の `MainCameraTransform` は前のcameraを指し、その後に実 `UpdateMainCamera` を呼ぶと切替先を指しました。静的監査の順序を人工fixtureで確認できました。
+- camera未通知、範囲外index、free camera未指定では、既存の `MissingSelectedCamera` と出力保持を確認しました。既存ライブへ新しい拒否条件を加えたものではありません。
+- 追加はEditor検証と文書だけです。描画9クラス・2shader、Director、Control、通知順序、scene、ProjectSettings、Packagesは変更していません。
+
+試験の選択closureは、通知されたindexと既存Control参照を使う明示登録の利用例です。通常ライブへ自動接続する実装ではありません。実Directorの通常 `Update` 全体や自然楽曲、character animation、post effect、native物理の受入も未実施です。この人工geometryの選択試験では、後段への新しい描画通知を必要としませんでした。
+
+詳細は [結合検証](Tools/OriginalLiveRendering/INTEGRATION.md) と [camera選択の結果](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md#同一control更新でのcamera選択検証) を参照してください。過去の原作実測、35／171チェック、Unknownと判定flagは維持します。
