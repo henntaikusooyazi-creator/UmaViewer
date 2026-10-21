@@ -135,7 +135,7 @@ public class WashLightAnimTest : MonoBehaviour
         }
         else if (!string.IsNullOrEmpty(open))
         {
-            // Ã»ÓĞ loop µÄ»°¾ÍÍ£ÔÚ open ×îºóÒ»Ö¡Ò²ĞĞ
+            // æ²¡æœ‰ loop çš„è¯å°±åœåœ¨ open æœ€åä¸€å¸§ä¹Ÿè¡Œ
             AnimationState st = targetAnimation[open];
             if (st != null)
             {
