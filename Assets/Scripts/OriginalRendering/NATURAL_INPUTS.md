@@ -19,6 +19,7 @@
 |ST、UV変換、TexelSize.y、mip bias|明示的なInputs.Texture|cameraや解像度から推定しない|
 |kind別base・回転定数|明示的なInputs.Angles|未解決ならnullableのまま|
 |duration解決後のfade計算結果|明示的なInputs.ResolvedFade|時間換算を済ませた結果だけ供給する|
+|有効thicknessの分岐依存|5引数constructorのInputs.Thickness|明示した固定値／下限と、確認済みkind分岐または明示receiver分岐を使う|
 
 rawの有効フラグとfadeTimeはViewerのkey型／Control内にありますが、現在のSelectionはその値を運びません。未解決の時間helperを埋めるためにkeyを再検索したり、反射で抜き取ったりしません。現時点の接続には評価済みfadeを利用できます。
 
@@ -52,9 +53,27 @@ providerは各Selectionについて1回呼ばれます。更新時点のSelectio
 
 1. 選択snapshotに既に保持されている評価済み値。
 2. providerから明示された評価済み値とtexture mapping。
-3. 明示的に解決された依存を使うproducer math。
+3. 明示的に解決された依存を使うproducer math。有効thicknessは5引数constructorで依存を指定した場合だけ、選択済みcueと結びます。
 
 各成分を独立して扱います。たとえばfadeだけ解決しても、角度や有効thicknessを補完しません。raw thicknessを有効thicknessへ代入したり、maskRollを固定定数で変換したり、未取得fadeを1にしたりしません。
+
+## cueから有効thicknessへの追加経路
+
+確認済みの分岐を使う場合は、次を各Selectionに対するproviderから返せます。
+
+```csharp
+return new OriginalLiveDrawInputResolver.Inputs(
+    confirmedEvaluatedDraw, confirmedTextureMapping,
+    resolvedAngleInputs, resolvedFade,
+    new OriginalCompositeProducerMath.ThicknessInputs(
+        confirmedFixedValue, confirmedMinimum, observedReceiverBranch));
+```
+
+固定値・下限・receiver分岐はnullableな明示入力です。分岐が未指定なら、kind 1の固定値側と、その他のnonzero kindのraw／下限比較側だけを使います。kind 0の時間依存分岐は推測しません。詳細は [純粋計算](PRODUCER_MATH.md#有効thickness) を参照してください。
+
+既存の2～4引数constructorではこの追加計算を有効にしません。選択keyの再探索・再補間、時刻換算、前updateの値の再利用はありません。raw thicknessと評価済みmaterial値を別々に保持したまま、その更新のcueから計算できます。
+
+fade、角度のhelper依存、TextureMappingをこの追加によって自動生成できたとは扱いません。別effectのstage fade、material、RTサイズからの推測や、coverageの `LastParameters` を入力へ戻す経路も追加していません。
 
 値が足りない場合は、従来の `TryCreatePass0Parameters` が同じUnresolvedを返します。新しい開始条件や成功条件を追加しません。kindやpassからcameraを選ばず、pass要求も書き換えません。providerの例外は既存session/bridgeの例外処理へそのまま伝えます。
 

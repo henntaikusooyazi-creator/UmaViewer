@@ -12,14 +12,24 @@ namespace Gallop.Live.Rendering
             public readonly OriginalCompositeCueAdapter.TextureMapping? Texture;
             public readonly OriginalCompositeProducerMath.AngleInputs Angles;
             public readonly OriginalCompositeProducerMath.FadeResult? ResolvedFade;
+            public readonly OriginalCompositeProducerMath.ThicknessInputs? Thickness;
 
             public Inputs(OriginalCompositeCueAdapter.DrawState evaluatedDraw,
                 OriginalCompositeCueAdapter.TextureMapping? texture,
                 OriginalCompositeProducerMath.AngleInputs angles = default,
                 OriginalCompositeProducerMath.FadeResult? resolvedFade = null)
+                : this(evaluatedDraw, texture, angles, resolvedFade, null) { }
+
+            // The existing constructor remains unchanged. Only this explicit
+            // overload enables the cue-to-effective-thickness calculation.
+            public Inputs(OriginalCompositeCueAdapter.DrawState evaluatedDraw,
+                OriginalCompositeCueAdapter.TextureMapping? texture,
+                OriginalCompositeProducerMath.AngleInputs angles,
+                OriginalCompositeProducerMath.FadeResult? resolvedFade,
+                OriginalCompositeProducerMath.ThicknessInputs? thickness)
             {
                 EvaluatedDraw = evaluatedDraw; Texture = texture;
-                Angles = angles; ResolvedFade = resolvedFade;
+                Angles = angles; ResolvedFade = resolvedFade; Thickness = thickness;
             }
         }
 
@@ -45,7 +55,8 @@ namespace Gallop.Live.Rendering
         {
             var draw = new OriginalCompositeCueAdapter.DrawState(
                 selected.Draw.Fade ?? inputs.EvaluatedDraw.Fade,
-                selected.Draw.EffectiveThickness ?? inputs.EvaluatedDraw.EffectiveThickness,
+                selected.Draw.EffectiveThickness ?? inputs.EvaluatedDraw.EffectiveThickness ??
+                    (inputs.Thickness.HasValue ? OriginalCompositeProducerMath.EvaluateEffectiveThickness(selected.Values, inputs.Thickness.Value) : (float?)null),
                 selected.Draw.ShaderAngles ?? inputs.EvaluatedDraw.ShaderAngles);
             var snapshot = new OriginalCompositeCueAdapter.Snapshot(
                 selected.Source, selected.Values, draw, selected.Texture ?? inputs.Texture,

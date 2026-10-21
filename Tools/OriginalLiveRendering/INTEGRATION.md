@@ -27,4 +27,14 @@ Unity 2022.3.62f3／D3D11で **94/94 PASS（従来42＋追加52）**。出力 `i
 
 これは通常ライブ全体、native物理、原作の画素一致を認定する試験ではありません。native物理DLLが利用できない検証環境でも、該当関数を呼ばない描画経路だけを確認しています。過去の原作採取・GPU replay・35チェックは別の証拠です。
 
+## 明示依存によるcue→draw providerの追加検証
+
+現在のrunnerは、上記94件に厚さ算術12件とprovider結合46件を加え、Unity f3／D3D11で **152/152 PASS** です。実 `AlterLateUpdate` の選択・補間結果を使い、5引数の `Inputs` から有効thicknessを計算します。producerのkind分岐とcallbackのscalar比較だけを移植し、実定数・時間helper・別effectの値を推測しません。
+
+各pipelineで6ケースを従来の評価済み入力経路と比較し、64×32の全RGBAが一致しました。更新されたraw thicknessがその更新のGPU画像を変えること、明示receiver分岐で左右の有効値が別々になること、評価済み値を保持することも確認しています。kind 0の分岐不明、下限未取得、fade未取得、角度依存未取得の4ケースは出力保持です。
+
+出力JSONの `thicknessMathChecks` は12、`drawProviderChecks` は46です。追加更新は `drawProviderBuiltinFrames`／`drawProviderUrpFrames` 各16、`drawProviderCalls` は64。`drawProvider` 配列には人工raw値、有効値、従来経路との画素比較結果を記録します。全体のControl更新は各pipelineで従来7＋camera選択7＋provider16です。
+
+このproviderは固定値・下限・角度依存・fade・mappingを人工入力として供給しています。自然ライブ全体のproviderが完成した意味ではありません。別途行った実SSE MAXSSとの81組の比較は純粋算術の補助検証で、152チェックや原作実測の件数へ足しません。
+
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`。原作S生成cameraと自然helperのUnknown、過去のPendingManualRecoveryを維持します。

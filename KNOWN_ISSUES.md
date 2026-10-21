@@ -22,6 +22,7 @@
 - Resolve元Sを実際に描いたcameraの正式帰属：`Unknown`。
 - 自然fadeのduration生成、kind別の回転helper・未取得定数：未確定。raw値から単位や固定FPSを推測しません。
 - fade、有効thickness、shader角度、TextureMappingの自然な供給元：未接続部分あり。resolverへ確認済み値を明示供給できます。
+- 有効thicknessの確定分岐はmath／resolverへ接続済みですが、固定値・下限の実定数とkind 0の時間依存状態は未確定です。人工GPU入力での152チェックを、自然provider全体の完成と扱いません。既存constructorは追加計算を有効にせず、評価済み値が優先されます。
 - 同一更新の下地camera選択：実切替イベントとControl参照を使う明示closureをBuilt-in／URP14の人工GPU試験で確認済み。Director main参照はbridgeより後に更新されるため単純なgetter参照は避けます。通常ライブでの描画準備完了や自動登録まで検証した結果ではありません。[検証範囲](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md#同一control更新でのcamera選択検証) を参照してください。
 - mask alphaの過去実測比較には9点の1/255差が残っています。補正値やepsilonは加えていません。
 - PS1の境界線色、全楽曲・全frame・全解像度での再現：未完了。

@@ -13,6 +13,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
+using M = Gallop.Live.Rendering.OriginalCompositeProducerMath;
 
 // Opt-in batch acceptance with artificial typed keys and generated geometry.
 // Uses the Fork's real Control/Director in a transient scene; no saved scene or game asset is changed.
@@ -23,13 +24,21 @@ public static class OriginalRenderingIntegrationValidation
         public string status = "Running", unity, graphics, failure, controlAssembly;
         public int checks, baselineChecks, builtinFrames, urpFrames, providerCalls;
         public int cameraSelectionChecks, cameraSelectionBuiltinFrames, cameraSelectionUrpFrames;
+        public int thicknessMathChecks, drawProviderChecks, drawProviderBuiltinFrames, drawProviderUrpFrames, drawProviderCalls;
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
+        public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
         public bool TestOnly = true, OriginalVerified = false, runtime_contract = false;
         public string Phase257cause = "Unknown", naturalSongPlayback = "NotTested";
     }
     [Serializable] sealed class CameraSelectionSample
     {
         public string pipeline, requested, selected, directorAtRender, directorAfterUpdate, center, status;
+    }
+    [Serializable] sealed class DrawProviderSample
+    {
+        public string pipeline, scenario;
+        public float rawRight, rawLeft, effectiveRight, effectiveLeft;
+        public bool matchesExplicitReference;
     }
     static Result result;
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
@@ -100,8 +109,8 @@ public static class OriginalRenderingIntegrationValidation
             Check(Application.isBatchMode, "Run acceptance only in its dedicated batch Editor.");
             Check(result.controlAssembly == "umamusume", "Actual Viewer assembly, not a Control stub.");
             Check(SystemInfo.graphicsDeviceType == GraphicsDeviceType.Direct3D11, "D3D11 device.");
-            Exercise(false); Exercise(true);
-            result.baselineChecks = result.checks - result.cameraSelectionChecks;
+            ExerciseThicknessMath(); Exercise(false); Exercise(true);
+            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks;
             result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
@@ -205,6 +214,7 @@ public static class OriginalRenderingIntegrationValidation
             { Tick(control, 105, urp); Check(unknown.Session.RenderCount == 0 && unknown.Session.LastStatus == "UnresolvedDrawInputs" && Read(output).SequenceEqual(preserved), "Missing values remain Unknown without affecting existing output."); }
             Check(control.OriginalCompositeBridge == null && !(bool)Field("_isNowAlterUpdate").GetValue(control), "Existing Control finishes after registration disposal.");
             ExerciseCameraSelection(control, director, sheet, urp);
+            ExerciseDrawProvider(control, sheet, urp);
         }
         finally
         {
@@ -215,6 +225,144 @@ public static class OriginalRenderingIntegrationValidation
             if (restoreScene) { SceneManager.SetActiveScene(oldScene); EditorSceneManager.CloseScene(fixtureScene, true); }
             Check(before == Resources.FindObjectsOfTypeAll<RenderTexture>().Count(r => r.name.StartsWith("Original.")) && !Resources.FindObjectsOfTypeAll<Camera>().Any(c => c.name == "Original.ExplicitCamera"), "Owned camera/RT cleanup: " + urp);
         }
+    }
+    static void ExerciseThicknessMath()
+    {
+        int firstCheck = result.checks;
+        try
+        {
+            A.CueValues Values(float? thickness, int? kind) => new A.CueValues(thickness, null, null, Vector2.zero, null, null, kind, 0);
+            var inputs = new M.ThicknessInputs(.5f, .125f);
+            Check(M.EvaluateEffectiveThickness(Values(.25f, 5), inputs) == .25f, "Nonzero kind uses cue thickness above the explicit minimum.");
+            Check(M.EvaluateEffectiveThickness(Values(.0625f, 4), inputs) == .125f, "Cue below minimum uses the explicit minimum.");
+            Check(M.EvaluateEffectiveThickness(Values(null, 1), new M.ThicknessInputs(.5f, null)) == .5f, "Fixed branch needs neither raw thickness nor minimum.");
+            Check(!M.EvaluateEffectiveThickness(Values(.25f, 0), inputs).HasValue && !M.EvaluateEffectiveThickness(Values(.25f, null), inputs).HasValue,
+                "Time-dependent or absent kind is unresolved without explicit receiver state.");
+            Check(M.EvaluateEffectiveThickness(Values(.25f, 0), new M.ThicknessInputs(null, .125f, true)) == .25f &&
+                M.EvaluateEffectiveThickness(Values(.25f, 5), new M.ThicknessInputs(.5f, null, false)) == .5f, "Explicit receiver branch takes priority over the kind path.");
+            Check(!M.EvaluateEffectiveThickness(Values(null, 5), inputs).HasValue &&
+                !M.EvaluateEffectiveThickness(Values(.25f, 5), new M.ThicknessInputs(.5f, null)).HasValue &&
+                !M.EvaluateEffectiveThickness(Values(.25f, 1), new M.ThicknessInputs(null, .125f)).HasValue, "Only dependencies used by the selected branch are required.");
+            float negativeZero = BitConverter.ToSingle(BitConverter.GetBytes(unchecked((int)0x80000000)), 0);
+            int Bits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
+            Check(Bits(M.EvaluateEffectiveThickness(Values(0, 5), new M.ThicknessInputs(null, negativeZero)).Value) == Bits(negativeZero) &&
+                Bits(M.EvaluateEffectiveThickness(Values(negativeZero, 5), new M.ThicknessInputs(null, 0)).Value) == 0, "Equal signed zeros select the second operand.");
+            float nan = BitConverter.ToSingle(BitConverter.GetBytes(unchecked((int)0x7fc12345)), 0);
+            Check(M.EvaluateEffectiveThickness(Values(nan, 5), inputs) == .125f &&
+                Bits(M.EvaluateEffectiveThickness(Values(.25f, 5), new M.ThicknessInputs(null, nan)).Value) == Bits(nan), "Unordered max selects the second operand without a finite-value guard.");
+            Check(M.EvaluateEffectiveThickness(Values(float.PositiveInfinity, 5), inputs) == float.PositiveInfinity &&
+                M.EvaluateEffectiveThickness(Values(float.NegativeInfinity, 5), inputs) == .125f, "Infinity follows the existing scalar selection.");
+            var context = new A.Context(7, 2, 11, 12, 13);
+            var selected = A.FromEvaluatedProducer(context, Values(.25f, 5), default, null);
+            var legacy = OriginalLiveDrawInputResolver.Complete(selected, new OriginalLiveDrawInputResolver.Inputs(default, null));
+            Check(!legacy.Draw.EffectiveThickness.HasValue, "Old constructor does not enable raw-thickness fallback.");
+            var filled = OriginalLiveDrawInputResolver.Complete(selected, new OriginalLiveDrawInputResolver.Inputs(default, null, default, null, inputs));
+            Check(filled.Draw.EffectiveThickness == .25f && !filled.Draw.Fade.HasValue && !filled.Draw.ShaderAngles.HasValue && !filled.Texture.HasValue &&
+                filled.Source.TrackOrdinal == 7 && filled.Source.CompositeIndex == 2 && filled.Source.UpdateToken == 13, "Partial completion keeps other Unknown inputs and identity.");
+            var evaluated = new OriginalLiveDrawInputResolver.Inputs(new A.DrawState(null, .375f, null), null, default, null, inputs);
+            Check(OriginalLiveDrawInputResolver.Complete(selected, evaluated).Draw.EffectiveThickness == .375f &&
+                OriginalLiveDrawInputResolver.Complete(selected.WithDrawState(new A.DrawState(null, .75f, null)), evaluated).Draw.EffectiveThickness == .75f,
+                "Snapshot and supplied evaluated thickness retain priority over new arithmetic.");
+        }
+        finally { result.thicknessMathChecks += result.checks - firstCheck; }
+    }
+
+    static void ExerciseDrawProvider(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int firstCheck = result.checks;
+        try
+        {
+            sheet.cameraSwitcherKeys.thisList.Clear();
+            void Keys(float current, float next, int rightKind = 5, int leftKind = 4)
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    var keys = sheet.multiCameraPosKeys[k].keys.thisList;
+                    keys[0].lineThickness = current; keys[1].lineThickness = next;
+                    keys[0].maskType = (LiveTimelineKeyMultiCameraPositionData.MaskType)(k == 0 ? rightKind : leftKind);
+                }
+            }
+            Keys(.0625f, .1875f);
+            bool reference = false, supplyFade = true, supplyAngles = true, explicitBranches = false;
+            float expectedRight = .125f, expectedLeft = .125f;
+            float? suppliedThickness = null, minimum = .03125f, fixedValue = .375f;
+            var resolved = new Dictionary<int, A.Snapshot>();
+            var resolver = new OriginalLiveDrawInputResolver(selection =>
+            {
+                result.drawProviderCalls++;
+                bool right = selection.TrackOrdinal == 0;
+                if (reference) return new OriginalLiveDrawInputResolver.Inputs(
+                    new A.DrawState(1, right ? expectedRight : expectedLeft, new Vector2(right ? .25f : -.25f, 0)), new A.TextureMapping(Identity, 1, Identity, 0));
+                // All constants are synthetic, explicitly supplied dependencies.
+                // Angles use the actual interpolated RotationSource; no kind table or unit is inferred.
+                var angles = supplyAngles ? new M.AngleInputs(right ? 5 : -45, 100) : default;
+                var thickness = new M.ThicknessInputs(fixedValue, minimum, explicitBranches ? (bool?)right : null);
+                return new OriginalLiveDrawInputResolver.Inputs(new A.DrawState(supplyFade ? (float?)1 : null, suppliedThickness, null),
+                    new A.TextureMapping(Identity, 1, Identity, 0), angles, null, thickness);
+            });
+            var output = Target(64, 32);
+            using (var registration = new OriginalLiveTimelineRegistration(control, 0, 1, _ => control.GetCamera(0).camera,
+                Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output, selection =>
+                {
+                    var snapshot = resolver.Resolve(selection);
+                    if (!reference) resolved[selection.TrackOrdinal] = snapshot;
+                    return snapshot;
+                }))
+            {
+                void TickProvider()
+                {
+                    Field("_currentFrame").SetValue(control, 105f); control.AlterLateUpdate();
+                    if (urp) result.drawProviderUrpFrames++; else result.drawProviderBuiltinFrames++;
+                }
+                Color32[] MatchReference(string scenario, float right, float left)
+                {
+                    expectedRight = right; expectedLeft = left; resolved.Clear(); reference = false;
+                    int renders = registration.Session.RenderCount, calls = result.drawProviderCalls;
+                    TickProvider();
+                    Check(registration.Session.RenderCount == renders + 1 && registration.Session.LastException == null && result.drawProviderCalls == calls + 2,
+                        "Actual Control selection calls provider per track and renders: " + scenario);
+                    Check(resolved[0].Draw.EffectiveThickness == right && resolved[1].Draw.EffectiveThickness == left &&
+                        resolved[0].Draw.ShaderAngles == new Vector2(.25f, 0) && resolved[1].Draw.ShaderAngles == new Vector2(-.25f, 0) &&
+                        resolved[0].AppliedRatio == .5f && resolved[0].Source.CompositeIndex == 17 && resolved[1].Source.CompositeIndex == 4,
+                        "Selected cue math reaches draw inputs with original ratio and independent k/j: " + scenario);
+                    var actual = Read(output); reference = true; TickProvider(); reference = false;
+                    bool matches = Read(output).SequenceEqual(actual);
+                    Check(registration.Session.RenderCount == renders + 2 && matches, "All output pixels match the old evaluated-input route: " + scenario);
+                    result.drawProvider.Add(new DrawProviderSample { pipeline = urp ? "URP14" : "Built-in", scenario = scenario,
+                        rawRight = resolved[0].Values.Thickness.Value, rawLeft = resolved[1].Values.Thickness.Value,
+                        effectiveRight = right, effectiveLeft = left, matchesExplicitReference = matches });
+                    return actual;
+                }
+                void Preserve(A.Unresolved missing, string scenario)
+                {
+                    reference = false; var previous = Read(output); int renders = registration.Session.RenderCount;
+                    TickProvider();
+                    Check(registration.Session.RenderCount == renders && registration.Session.LastStatus == "UnresolvedDrawInputs" &&
+                        registration.Session.LastUnresolved.HasFlag(missing) && Read(output).SequenceEqual(previous), "Incomplete provider preserves output: " + scenario);
+                }
+                var first = MatchReference("interpolated cue thickness", .125f, .125f);
+                Keys(.1875f, .3125f);
+                var changed = MatchReference("updated selected keys", .25f, .25f);
+                Check(!changed.SequenceEqual(first), "Current update thickness changes GPU output without a provider cache.");
+                Keys(.03125f, .0625f); minimum = .125f;
+                MatchReference("explicit minimum", .125f, .125f);
+                Keys(.03125f, .0625f, 1, 1);
+                MatchReference("fixed branch", .375f, .375f);
+                Keys(.03125f, .0625f, 0, 0);
+                Preserve(A.Unresolved.EffectiveThickness, "time-dependent branch not supplied");
+                explicitBranches = true;
+                MatchReference("explicit receiver branches", .125f, .375f);
+                explicitBranches = false; suppliedThickness = .0625f; minimum = null; fixedValue = null;
+                MatchReference("evaluated thickness priority", .0625f, .0625f);
+                suppliedThickness = null; Keys(.0625f, .1875f);
+                Preserve(A.Unresolved.EffectiveThickness, "minimum missing");
+                minimum = .03125f; supplyFade = false;
+                Preserve(A.Unresolved.Fade, "fade remains explicit");
+                supplyFade = true; supplyAngles = false;
+                Preserve(A.Unresolved.ShaderAngles, "angle dependencies missing");
+            }
+        }
+        finally { result.drawProviderChecks += result.checks - firstCheck; }
     }
     static void ExerciseCameraSelection(LiveTimelineControl control, Director director, LiveTimelineWorkSheet sheet, bool urp)
     {

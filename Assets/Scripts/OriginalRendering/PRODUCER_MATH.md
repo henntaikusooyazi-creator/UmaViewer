@@ -2,7 +2,21 @@
 
 # 原作producerの純粋計算
 
-`OriginalCompositeProducerMath` は、保存命令で確認できたfadeの分岐とshader角度の計算を扱う追加機能です。既存adapter、timeline、camera producer、GPU合成を変更せず、呼出し側が明示的に利用します。
+`OriginalCompositeProducerMath` は、保存命令で確認できたfade、shader角度、有効thicknessの計算を扱う追加機能です。既存adapter、timeline、camera producer、GPU合成を変更せず、呼出し側が明示的に利用します。
+
+## 有効thickness
+
+`EvaluateEffectiveThickness` は、選択・補間済みの `CueValues.Thickness` と、明示した `ThicknessInputs` からmaterialへ渡すscalarを計算します。raw thicknessを常にそのまま採用する機能ではありません。
+
+- 確認済みのproducer分岐ではkind 1が固定値側、その他のnonzero kindがraw値と下限の比較側を選びます。kindの名前や画面方向は推定しません。
+- kind 0は時間helperとreceiver状態に依存します。kind未取得の場合も含め、明示された `UseCueThickness` がなければUnknownです。
+- `UseCueThickness` が指定されていれば、そのreceiver分岐を優先します。falseは `FixedValue`、trueはraw thicknessと `Minimum` の大きい方です。
+- 固定値・下限の実定数はこの実装へ埋め込んでいません。使用する分岐の値が未供給なら結果もnullableのままです。使わない分岐の定数は要求しません。
+- 比較は `cue > minimum ? cue : minimum` で、等値・unordered時は元のscalar命令と同じく第2オペランドを採用します。符号付きゼロやNaNを別値へ正規化せず、epsilonや新しい有限値判定も追加しません。
+
+既存resolverの5引数 `Inputs` に `ThicknessInputs` を指定したときだけ、この計算が接続されます。元snapshotの評価済みthickness、providerの評価済みthickness、今回の計算の順に優先します。既存constructorと未指定時の動作は保持しています。
+
+これは保存された分岐の純粋計算です。原作の実行時定数やkind 0の状態を新たに取得した結果ではなく、自然provider全体の完成でもありません。
 
 ## 角度
 

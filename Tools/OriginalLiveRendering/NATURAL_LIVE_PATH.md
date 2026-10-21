@@ -78,3 +78,11 @@ camera未通知、範囲外index、free camera未指定では、新レンダラ�
 この選択問題については、既存イベントとControl参照だけで同一更新のcameraを選べました。今回のfixtureでは、bridge通知を移動したり、追加の後段通知を設けたりする必要はありませんでした。追加はEditor検証と文書だけで、描画9クラス・2shaderとDirector／Controlの実装は変更していません。
 
 reflectionで人工scene参照を与え、後段の実main更新を呼んだ限定試験です。Directorの通常 `Update` 全体、実楽曲、character animationやpost effectの描画準備完了は検証していません。自然provider、native物理、原作S生成cameraの正式帰属、全frameの最終画素対応は引き続き未確定です。過去の判定flagや `PendingManualRecovery` は変更しません。
+
+## 有効thicknessの部分接続
+
+保存資料のproducerとcallbackを照合し、有効thicknessの分岐を既存math／resolverへ追加しました。raw cueは同じControl更新の選択済みsnapshotから受け取ります。固定値・下限の定数は明示入力で、kind 0の時間依存状態は明示されたreceiver分岐がない限りUnknownです。既存constructorと評価済み入力の優先を維持しています。
+
+Unity f3／D3D11の人工GPU検証は152/152 PASS（従来94＋厚さ算術12＋provider結合46）。Built-in／URPで各6ケースの全RGBAが従来の評価済み入力経路と一致しました。これにより、補間済みraw値→明示依存による有効値→既存coverage・順次合成の接続を確認できました。
+
+自然provider全体は未完成です。固定値・下限の実定数、kind 0の実状態、自然fade、角度helper依存、TextureMappingは別途確認・供給が必要です。人工定数を原作の確定値に昇格せず、未観測frameへの保存値延長も行いません。原作採取・ゲーム操作・native DLL復元は0で、通常ライブへの自動登録や新しい開始条件は追加していません。

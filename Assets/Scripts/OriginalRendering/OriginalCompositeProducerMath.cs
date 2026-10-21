@@ -7,6 +7,33 @@ namespace Gallop.Live.Rendering
     // or kind-table lookup; callers explicitly supply the unresolved dependencies.
     public static class OriginalCompositeProducerMath
     {
+        public readonly struct ThicknessInputs
+        {
+            public readonly float? FixedValue, Minimum;
+            // Explicit receiver state can resolve the time-dependent kind-0 branch.
+            public readonly bool? UseCueThickness;
+            public ThicknessInputs(float? fixedValue, float? minimum, bool? useCueThickness = null)
+            { FixedValue = fixedValue; Minimum = minimum; UseCueThickness = useCueThickness; }
+        }
+
+        // Nonzero kinds have an unconditional producer write to the receiver flag.
+        // Kind 0 depends on unresolved timing/state and is not inferred here.
+        public static bool? SelectThicknessBranch(int? kind)
+        { return !kind.HasValue || kind.Value == 0 ? (bool?)null : kind.Value != 1; }
+
+        public static float? EvaluateEffectiveThickness(
+            OriginalCompositeCueAdapter.CueValues values, ThicknessInputs inputs)
+        {
+            bool? useCue = inputs.UseCueThickness ?? SelectThicknessBranch(values.Kind);
+            if (!useCue.HasValue) return null;
+            if (!useCue.Value) return inputs.FixedValue;
+            if (!values.Thickness.HasValue || !inputs.Minimum.HasValue) return null;
+            float cue = values.Thickness.Value, minimum = inputs.Minimum.Value;
+            // Ordered comparison preserves MAXSS's second-operand selection for
+            // equal values (including signed zero) and unordered comparisons.
+            return cue > minimum ? cue : minimum;
+        }
+
         public readonly struct AngleInputs
         {
             public readonly float? KindBase, Divisor, SecondaryOrigin, SecondaryScale;

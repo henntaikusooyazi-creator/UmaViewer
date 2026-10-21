@@ -20,7 +20,7 @@
 |右描画→共有入力更新→左描画→下地とのalpha合成|`Assets/Scripts/OriginalRendering/OriginalMultiCameraRenderer.cs`|移植済み|
 |原作式によるcoverage生成|`OriginalMaskCoverageGenerator.cs` と専用shader|移植済み|
 |選択済み／評価済みcue snapshot|`OriginalCompositeCueAdapter.cs`|移植済み|
-|確定しているproducer算術|`OriginalCompositeProducerMath.cs`|移植済み。未解決helperは明示入力|
+|確定しているproducer算術|`OriginalCompositeProducerMath.cs`|移植済み。有効thicknessの明示依存による分岐を追加。未解決helperは明示入力|
 |実Controlの選択結果通知|`OriginalLiveTimelineBridge.cs`|本家の新しいLiveTimeLine側へ最小差分で接続|
 |独立所有cameraによる描画|`OriginalCameraProducer.cs`|移植済み。Built-in／URP14|
 |順次描画sessionと入力resolver|`OriginalLiveRenderSession.cs`、`OriginalLiveDrawInputResolver.cs`|移植済み|
@@ -75,7 +75,7 @@ scene・ProjectSettings・Packagesは変更せず、原作ゲームも起動し�
 |Forkへの移植|9クラス・2shader・最小timeline接続を実施|
 |公開済み描画ブランチのUnityプロジェクト全体|本家由来の構文エラーでコンパイル未完了。7コミットの状態を保持|
 |独立検証ブランチのmanaged／Editorコンパイル|Unity f3のbatch import終了コード0|
-|独立検証ブランチの9クラス結合|実Control＋人工typed key／geometryの42チェックとcamera選択52チェック、計94/94 PASS|
+|独立検証ブランチの9クラス結合|実Control＋人工typed key／geometryで152/152 PASS。従来94＋厚さ算術12＋provider結合46|
 |元Viewer通常ライブへの統合|未完了。自動採用しない|
 |全解像度・全frameでの原作一致|未証明|
 
@@ -120,3 +120,19 @@ S生成cameraの正式帰属、自然fade・回転helper、有効描画状態の
 試験の選択closureは、通知されたindexと既存Control参照を使う明示登録の利用例です。通常ライブへ自動接続する実装ではありません。実Directorの通常 `Update` 全体や自然楽曲、character animation、post effect、native物理の受入も未実施です。この人工geometryの選択試験では、後段への新しい描画通知を必要としませんでした。
 
 詳細は [結合検証](Tools/OriginalLiveRendering/INTEGRATION.md) と [camera選択の結果](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md#同一control更新でのcamera選択検証) を参照してください。過去の原作実測、35／171チェック、Unknownと判定flagは維持します。
+
+## cueから描画値への追加接続
+
+自然providerの不足を一括で推測せず、保存命令で確認できた有効thicknessの分岐を既存producer mathとresolverへ接続しました。選択済みcueのkindとraw thicknessを使用し、固定値・下限・必要なreceiver分岐は明示入力です。評価済みsnapshotとproviderの評価済み値が優先され、既存の `Inputs` constructorでは追加計算を有効にしません。
+
+Unity 2022.3.62f3／D3D11で **152/152 PASS**。従来94件を再実行し、厚さ算術12件と実Controlからのprovider結合46件を追加しました。Built-in／URP14で各16回の追加更新、provider計64回です。
+
+- 選択・補間済みthickness、更新後のkey、明示下限、固定値側、明示receiver分岐、評価済み値優先の各ケースを描画しました。
+- 両pipelineの各6ケースで、64×32出力のRGBA全画素が従来の評価済み入力経路と一致しました。raw値と有効値を別々に保持しています。
+- shader角度も既存算術へ選択済みrotation sourceと人工の明示依存を渡しました。未取得の実角度定数を同定した結果ではありません。fadeとmappingも明示的な人工入力です。
+- kind 0の時間依存分岐、下限、fade、角度依存が未取得の場合は、該当Unresolvedと出力保持を確認しました。
+- scalar比較は別途、実SSE MAXSSとの人工81組でbit一致しました。GPUチェック数や原作実測数へ合算しません。
+
+変更した実装は `OriginalCompositeProducerMath` と `OriginalLiveDrawInputResolver` の追加経路だけです。renderer、coverage、shader、adapter、bridge、camera producer、registration、Director、Control、通常ライブの登録と通知順序は保持しています。成功済みfeatureブランチと研究Viewerも無変更です。
+
+これは確認済み算術を自然cueの通知先へ結ぶ段階の **TestOnly** 成果です。固定値・下限の実定数、kind 0の実状態、自然fadeと回転helper、TextureMappingの自然供給、native物理を含む自然ライブは未確定・未検証です。原作の追加採取は行っていません。
