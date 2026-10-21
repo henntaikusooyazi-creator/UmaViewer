@@ -136,3 +136,9 @@ Unity 2022.3.62f3／D3D11で **152/152 PASS**。従来94件を再実行し、厚
 変更した実装は `OriginalCompositeProducerMath` と `OriginalLiveDrawInputResolver` の追加経路だけです。renderer、coverage、shader、adapter、bridge、camera producer、registration、Director、Control、通常ライブの登録と通知順序は保持しています。成功済みfeatureブランチと研究Viewerも無変更です。
 
 これは確認済み算術を自然cueの通知先へ結ぶ段階の **TestOnly** 成果です。固定値・下限の実定数、kind 0の実状態、自然fadeと回転helper、TextureMappingの自然供給、native物理を含む自然ライブは未確定・未検証です。原作の追加採取は行っていません。
+
+## thickness実定数の保存資料確認
+
+`b456e57` 後の文書限定調査です。[定数の根拠と不足範囲](Tools/OriginalLiveRendering/THICKNESS_CONSTANT_EVIDENCE.md) を記録しました。参照命令から2個のfloat32を特定し、関連する保存記録10件を照合しましたが、確認範囲には対象値のbytesが収録されていません。有効thicknessの観測結果だけから固定値／下限値を一意に決めることもできません。
+
+実値はUnknownのまま、既存の明示入力と152/152の過去受入を保持します。次に不足する値自体は各4bytes、合計8bytesです。実装、試験、原作run、開始条件、配備には変更がありません。今回の確認を新しいGPU受入や自然provider完成として扱いません。
