@@ -2,6 +2,8 @@
 
 更新日：2026-10-22。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
+> この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
 ## ブランチと本家
 
 - 本家：<https://github.com/katboi01/UmaViewer>
@@ -71,7 +73,9 @@ scene・ProjectSettings・Packagesは変更せず、原作ゲームも起動し�
 |ローカル研究Viewerの部品実装|実装済み|
 |分離UnityでのGPU検証|上記の過去結果を保持|
 |Forkへの移植|9クラス・2shader・最小timeline接続を実施|
-|ForkのUnityプロジェクト全体|本家由来の構文エラーでコンパイル未完了|
+|公開済み描画ブランチのUnityプロジェクト全体|本家由来の構文エラーでコンパイル未完了。7コミットの状態を保持|
+|独立検証ブランチのmanaged／Editorコンパイル|Unity f3のbatch import終了コード0|
+|独立検証ブランチの9クラス結合|実Control＋人工typed key／geometryで42/42 PASS|
 |元Viewer通常ライブへの統合|未完了。自動採用しない|
 |全解像度・全frameでの原作一致|未証明|
 
@@ -80,3 +84,19 @@ scene・ProjectSettings・Packagesは変更せず、原作ゲームも起動し�
 S生成cameraの正式帰属、自然fade・回転helper、有効描画状態の自然供給、全画素対応は未確定です。最新の原作F採取runの停止判定は `PendingManualRecovery` のまま保持します。ゲーム通常終了後の復元と実行中hookの解除証明は別です。このFork作業で原作ゲームや採取環境は操作していません。
 
 残る問題は [KNOWN_ISSUES.md](KNOWN_ISSUES.md)、APIの使用法は [設計文書](Assets/Scripts/OriginalRendering/README.md) を参照してください。
+
+## 独立検証ブランチでの追加結果
+
+この節は上記35チェックとは別の検証です。描画9クラスと2shaderの実装は `781ef89` から変更していません。
+
+- PR #234全体ではなく、その最初のコンパイル修正 `fbaaa925ab54c9f1f472a8ee7428b7e6ebc7fbff` を出典付きで適用しました。
+- 本家ソースの不正なUTF-8文字列を修正し、既存GBKソース8ファイルを可逆にUTF-8へ変換しました。数式や制御処理の変更ではありません。
+- sample sceneを含む旧file-browser assetは保持しました。旧assemblyの自動参照だけを無効にし、通常のViewer assemblyは現行file-browserを参照します。
+- scene、prefab、ProjectSettings、Packagesの保存差分はありません。
+- 全managed／Editor assemblyをUnity 2022.3.62f3でコンパイルし、batch import終了コード0を確認しました。
+- 実 `LiveTimelineControl.AlterLateUpdate` と4クラスの結合をD3D11で検証し、**42/42チェックPASS**。Built-in／URP各7更新、provider計16回です。
+- key選択と使用ratio、immutable snapshot、k/j独立、MultiCameraNo、camera交換、購読handlerの例外分離、登録所有権、Unknown／他pass時の出力保持、解除後の停止、source buffer保持、所有RT解放を確認しました。
+
+人工geometryと明示済み描画値によるEditor検証です。実楽曲の自然な再生、原作camera帰属、native物理、全frame一致を証明しません。検証環境ではnative物理DLLが利用できず、復元や保護設定の変更、native物理関数の呼出しは行っていません。
+
+実行方法と基盤修正の境界は [INTEGRATION.md](Tools/OriginalLiveRendering/INTEGRATION.md) を参照してください。以前の171チェック、35チェック、原作実測照合は独立した成果として保持します。本家へのPRは作成していません。
