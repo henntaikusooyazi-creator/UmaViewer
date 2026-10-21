@@ -9,6 +9,7 @@ namespace Gallop.Live.Cutt
 {
     public class LiveTimelineControl : MonoBehaviour
     {
+        [NonSerialized] public Gallop.Live.Rendering.OriginalLiveTimelineBridge OriginalCompositeBridge;
         public LiveTimelineData data;
         public const int kTargetFps = 60;
         public const float kTargetFpsF = 60;
@@ -415,6 +416,7 @@ namespace Gallop.Live.Cutt
             //不遍历所有 worksheet,避免同名LaserA/LaserB轨道在同一帧互相覆盖。
             AlterUpdate_BgColor2(camSheet, _currentFrame);
 
+            OriginalCompositeBridge?.CompleteFrame();
             _isNowAlterUpdate = false;
 
             if (IsRecordVMD)
@@ -1649,9 +1651,11 @@ namespace Gallop.Live.Cutt
                     float fieldOfView;
                     Vector3 maskOffset;
                     float maskRoll;
+                    float? originalCompositeRatio = null;
                     if (liveTimelineKeyMultiCameraPositionData2 != null && liveTimelineKeyMultiCameraPositionData2.interpolateType != 0)
                     {
                         float t = CalculateInterpolationValue(liveTimelineKeyMultiCameraPositionData, liveTimelineKeyMultiCameraPositionData2, currentFrame);
+                        originalCompositeRatio = t;
                         fieldOfView = LerpWithoutClamp(liveTimelineKeyMultiCameraPositionData.fov, liveTimelineKeyMultiCameraPositionData2.fov, t);
                         maskOffset = LerpWithoutClamp(liveTimelineKeyMultiCameraPositionData.maskOffset, liveTimelineKeyMultiCameraPositionData2.maskOffset, t);
                         maskRoll = LerpWithoutClamp(liveTimelineKeyMultiCameraPositionData.maskRoll, liveTimelineKeyMultiCameraPositionData2.maskRoll, t);
@@ -1683,6 +1687,9 @@ namespace Gallop.Live.Cutt
                         _multiCamera[i].MaskRoll = maskRoll;
                         //_multiCamera[i].maskScale = maskScale;
                     }
+                    OriginalCompositeBridge?.CaptureSelected(i, currentFrame,
+                        liveTimelineKeyMultiCameraPositionData, liveTimelineKeyMultiCameraPositionData2,
+                        originalCompositeRatio, camera);
                 }
             }
         }
@@ -1735,6 +1742,7 @@ namespace Gallop.Live.Cutt
 
         private void AlterUpdate_MultiCamera(LiveTimelineWorkSheet sheet, float currentFrame)
         {
+            OriginalCompositeBridge?.BeginFrame(currentFrame);
             //if (_multiCameraCache != null && !(_multiCameraManager == null) && _multiCameraManager.isInitialize)
             if (_multiCameraCache != null)
             {
