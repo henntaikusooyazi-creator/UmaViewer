@@ -100,3 +100,9 @@ S生成cameraの正式帰属、自然fade・回転helper、有効描画状態の
 人工geometryと明示済み描画値によるEditor検証です。実楽曲の自然な再生、原作camera帰属、native物理、全frame一致を証明しません。検証環境ではnative物理DLLが利用できず、復元や保護設定の変更、native物理関数の呼出しは行っていません。
 
 実行方法と基盤修正の境界は [INTEGRATION.md](Tools/OriginalLiveRendering/INTEGRATION.md) を参照してください。以前の171チェック、35チェック、原作実測照合は独立した成果として保持します。本家へのPRは作成していません。
+
+## 自然ライブへ向けた静的接続確認
+
+[既存ロード経路の監査](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md) を追加しました。キャラクタ構築時のnative物理初期化は既存の物理OFFでは省略されず、評価済み描画値の自然providerも未接続です。また、bridge通知はDirectorのmain camera更新より前なので、下地cameraの選択方法には同一updateの切替を考慮する必要があります。
+
+これはソース監査の結果です。追加run・追加テスト・実装変更はなく、自然ライブ受入へ格上げしません。原作ゲームと隔離DLLは操作していません。
