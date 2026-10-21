@@ -47,6 +47,7 @@ namespace Gallop.Live.Cutt
     public class LiveTimelineMultiCameraPositionData : ILiveTimelineGroupDataWithName
     {
         private const string default_name = "MultiCameraPos";
+        public int MultiCameraNo;
         public LiveTimelineKeyMultiCameraPositionDataList keys;
     }
 }
