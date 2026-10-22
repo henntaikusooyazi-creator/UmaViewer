@@ -104,6 +104,9 @@ namespace Gallop.Live.Rendering
             if (!collecting) return;
             collecting = false;
             var frame = new Frame(serial, viewerFrame, pending.ToArray()); LastFrame = frame;
+            // A comparison pair belongs to one owner update. A second late update
+            // without AlterUpdate must not reuse it as a new observation.
+            ownerClock = null;
             var handlers = FrameReady;
             if (handlers == null) return;
             foreach (Action<Frame> handler in handlers.GetInvocationList())

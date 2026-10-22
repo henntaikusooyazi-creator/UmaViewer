@@ -2,6 +2,22 @@
 
 # 自然なtimeline更新と描画入力の接続
 
+## 連続供給の明示登録
+
+`OriginalLiveContinuousProvider` は、ロード済みControl、確認済みprofile、authored trackと一致する明示bindingを受け取ります。Controlの実 `AlterUpdate`／`AlterLateUpdate` をそのまま利用し、保存した時刻配列やViewerFrameからの推測時刻は供給しません。providerの `FrameReady` には同じ更新のimmutableなSelectionと解決済みSnapshotが届きます。
+
+無効keyも通知するため、enable解除後も以前の有効keyを使い続けません。比較時刻の組は1回のlate frameで消費し、初回、owner更新なしの再通知、clock解除後はUnknownです。停止中の同時刻やseek後の逆向き時刻も実owner値のまま渡します。登録済みの別bridgeは置換せず、Disposeは自身の登録だけを解除します。
+
+既存楽曲loaderの追加overload `LoadLive(live, cast, initializeNativePhysics, onTimelineReady)` は、実 `InitializeTimeline` 後、music初期化・Play前にcallbackを呼びます。ここでproviderを接続すれば、通常Directorの全更新を受け取れます。従来の2引数loaderは物理初期化あり・callbackなしのままです。
+
+`OriginalLiveContinuousRenderer` は、このproviderのSnapshotを既存coverage・順次compositorへ渡す追加のViewer previewです。呼出し側が下地cameraのresolver、順序を持つtrack、shader、描画先を指定します。単一channelは `leftTrack=null` と明示し、第2channelを透明にします。存在しない自然trackを推測しません。二channelも明示bindingで利用できます。
+
+`FullViewportMapping(height)` は、Viewer自身が生成するfull-viewport、identity UV/ST、mipなしRTに対する明示設定です。source viewportが対応しない場合は保持し、原作の未確定TextureMappingやcamera正式帰属へは転用しません。値・cameraが欠ける場合も従来どおり画素を保持します。
+
+利用側はrenderer→providerの順にDisposeし、caller所有のoutputを別途解放します。profileは公開ソースへ埋め込まず外部から与えます。native物理を省く場合も、明示loader引数で初期化前にopt-outします。
+
+公開人工入力312件と保存実測を含む1794件はGPU結合試験です。ローカル実楽曲の自然再生は別のPlayMode受入として、通常の終端・scene復帰、実音声進行、連続owner値、key切替、描画を確認します。原作からViewerへのclock契約や、原作最終画素一致は別の未確定事項です。
+
 `OriginalLiveDrawInputResolver` は、既存 `OriginalLiveTimelineRegistration` / `OriginalLiveRenderSession` のresolve delegateへ渡す追加機能です。Controlの選択順、camera、描画先、通常ライブの登録処理を維持し、明示登録時にowner更新の2値を観測できます。
 
 ## 入力を供給する場所

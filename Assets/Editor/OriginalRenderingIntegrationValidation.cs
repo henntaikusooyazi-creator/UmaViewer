@@ -33,6 +33,7 @@ public static class OriginalRenderingIntegrationValidation
         public int naturalCueChecks, naturalCueRows, naturalCueKeys, naturalCuePositiveDurationKeys;
         public string naturalCueSource = "NotProvided";
         public int naturalFadeChecks, naturalFadeRows, naturalFadeBuiltinFrames, naturalFadeUrpFrames;
+        public int continuousProviderChecks;
         public string naturalFadeSource = "NotProvided";
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
@@ -358,6 +359,9 @@ public static class OriginalRenderingIntegrationValidation
             ExerciseOwnerClockProvider(control, sheet, urp);
             if (naturalCueData != null) ExerciseNaturalCueAngles(control, sheet, urp);
             if (naturalFadeData != null) ExerciseNaturalFade(control, sheet, urp);
+            int continuousChecks = OriginalLiveContinuousValidation.Exercise();
+            result.continuousProviderChecks += continuousChecks;
+            result.checks += continuousChecks;
         }
         finally
         {

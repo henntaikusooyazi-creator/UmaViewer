@@ -438,8 +438,17 @@ public class UmaContainerCharacter : UmaContainer
         }
     }
 
+    public bool InitializeNativePhysicsOnLoad { get; set; } = true;
+
     public void LoadPhysics()
     {
+        // Explicit loader opt-out; the established default still initializes native
+        // cloth. This check precedes controller construction, binding and Reset.
+        if (!InitializeNativePhysicsOnLoad)
+        {
+            EnablePhysics = false;
+            return;
+        }
         if (IsMini)
             return;
 
@@ -1151,7 +1160,8 @@ public class UmaContainerCharacter : UmaContainer
 
             var cam = Camera.main;
             //LookAt Camera
-            TrackTarget.position = Vector3.Lerp(TrackTarget.position, cam.transform.position, Time.fixedDeltaTime * 3);
+            if (cam)
+                TrackTarget.position = Vector3.Lerp(TrackTarget.position, cam.transform.position, Time.fixedDeltaTime * 3);
         }
         else
         {

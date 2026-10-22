@@ -4,7 +4,15 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
-## 自然な正duration keyのfade接続
+## 自然なkey・owner時刻の連続供給
+
+`OriginalLiveContinuousProvider` がロード済みControlの各更新を受け取り、選択済みkeyと同じowner時刻の組から既存resolverを呼びます。無効keyも通知し、owner時刻を1更新で使い切ることで、初回・late updateだけの再実行ではUnknownを保ちます。停止・seek、登録所有権、未取得時の画素保持、単一／二channelを含む追加64件により、公開人工入力は **312/312 PASS**、保存実測を含む結合試験は **1794/1794 PASS** です。
+
+明示callback付きの既存楽曲loaderから、単一trackのローカル実楽曲をモデル・舞台・音声とともにロードし、通常Director更新で生成するViewer previewへ接続しました。**通常の楽曲終端・scene復帰まで自然再生PASS**。native物理は初期化前の明示opt-outを使い、既存UIの既定動作は保持します。[接続・再生受入](Tools/OriginalLiveRendering/INTEGRATION.md#自然な連続供給とviewer再生) を参照してください。
+
+このpreviewのTextureMappingは、Viewerが生成するfull-viewport・mipなしRTの明示設定です。原作の自然TextureMappingやcamera正式帰属へ昇格しません。原作からの時刻stream、原作とViewerの時刻原点・音声epoch、原作最終画素の全面一致は未成立です。各false判定と `Phase257cause=Unknown` を維持します。
+
+## 自然な正duration keyのfade接続（前回）
 
 別楽曲の有効keyから期間内15点・終点1点を自然採取し、実owner時刻・比較整数・raw durationを使う生成fadeが原作setter入力とbit一致しました。同じ実keyを選択する実Control → resolver → GPUもBuilt-in／URP14の全RGBAで一致し、従来1524＋追加206の **1730/1730 PASS**。公開用の人工入力は **248/248 PASS** です。[検証範囲](Tools/OriginalLiveRendering/INTEGRATION.md#正のdurationを持つ自然keyのfade) を参照してください。
 
@@ -45,7 +53,7 @@ ownerの現在時刻と比較時刻に対する保存済みproducer演算を確�
 |ロード済みtrackの明示登録|`OriginalLiveTimelineRegistration.cs`|移植済み。kとjを独立保持|
 |typed groupのComposite選択番号|`LiveTimelineMultiCameraPositionData.MultiCameraNo`|追加済み。旧データでは明示TrackBindingを使用|
 
-新規C# 9ファイル、shader 2ファイルです。既存ソースの変更はControlの通知点とtyped groupの追加fieldのみです。Director、scene、ProjectSettings、Packagesの変更はありません。
+初回移植はC# 9ファイル、shader 2ファイルでした。後続の明示provider・算術・連続previewは各節に記録しています。今回の既存ソース変更はbridgeの時刻寿命、Controlの無効key通知、loaderの明示callbackと物理opt-out、camera不在時の視線追従guardです。Director、scene、ProjectSettings、Packagesの保存内容は保持します。
 
 研究用Viewerの既存 `CompositeThree` はそのまま保持しています。その実装の変更なしコピーを `Tools/OriginalLiveRendering/Validation/Legacy` に比較テスト用として含めます。既存の通常ライブ出力を置換する機能ではありません。
 

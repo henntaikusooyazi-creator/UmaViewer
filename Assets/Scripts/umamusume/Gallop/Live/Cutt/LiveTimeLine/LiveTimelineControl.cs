@@ -1641,6 +1641,7 @@ namespace Gallop.Live.Cutt
                 }
                 LiveTimelineKeyMultiCameraPositionData liveTimelineKeyMultiCameraPositionData = curKey as LiveTimelineKeyMultiCameraPositionData;
                 LiveTimelineKeyMultiCameraPositionData liveTimelineKeyMultiCameraPositionData2 = nextKey as LiveTimelineKeyMultiCameraPositionData;
+                float? originalCompositeRatio = null;
                 // camera.enabled = liveTimelineKeyMultiCameraPositionData.enableMultiCamera;
                 if (liveTimelineKeyMultiCameraPositionData.enableMultiCamera)
                 {
@@ -1652,7 +1653,6 @@ namespace Gallop.Live.Cutt
                     float fieldOfView;
                     Vector3 maskOffset;
                     float maskRoll;
-                    float? originalCompositeRatio = null;
                     if (liveTimelineKeyMultiCameraPositionData2 != null && liveTimelineKeyMultiCameraPositionData2.interpolateType != 0)
                     {
                         float t = CalculateInterpolationValue(liveTimelineKeyMultiCameraPositionData, liveTimelineKeyMultiCameraPositionData2, currentFrame);
@@ -1688,10 +1688,12 @@ namespace Gallop.Live.Cutt
                         _multiCamera[i].MaskRoll = maskRoll;
                         //_multiCamera[i].maskScale = maskScale;
                     }
-                    OriginalCompositeBridge?.CaptureSelected(i, currentFrame,
-                        liveTimelineKeyMultiCameraPositionData, liveTimelineKeyMultiCameraPositionData2,
-                        originalCompositeRatio, camera);
                 }
+                // Disabled authored keys also delimit the continuous stream. Keep
+                // the selected state; the disabled camera is not updated or enabled.
+                OriginalCompositeBridge?.CaptureSelected(i, currentFrame,
+                    liveTimelineKeyMultiCameraPositionData, liveTimelineKeyMultiCameraPositionData2,
+                    originalCompositeRatio, camera);
             }
         }
 

@@ -1,5 +1,23 @@
 # 実Controlによる独立結合検証
 
+## 自然な連続供給とViewer再生
+
+公開人工入力は **312/312 PASS**、確認済みprofile・保存owner clock・保存cue・保存fadeを明示する試験は **1794/1794 PASS** です。前回から追加した64件は、初回late-only、owner値の使い切り、無効key通知、pause／seek、所有権、consumer例外分離、mapping／camera不足時の全RGBA保持、単一／二channelのGPU接続、物理初期化の明示opt-outを含みます。Built-in／URP14の各32件で、private値を必要としません。
+
+連続providerは実Controlの選択結果だけを受け取ります。正常なowner更新後も時刻が欠ける場合は異常として扱い、初回のowner未更新late-onlyとは区別します。snapshotにViewerFrameをowner比較値として代入する処理はありません。
+
+`Invoke-NaturalPlaybackValidation.ps1 -UnityExecutable <Unity.exe> -OutputPath <repo外> -MusicId <明示楽曲> -ConfirmedProducerProfile <外部profile>` は、専用Editorでローカルの単一track楽曲を選択してPlayMode受入を行います。通常のscene・builder・asset manager・楽曲loader・Directorを使い、モデル・舞台・音声を読み込みます。無関係なicon／全楽曲UIの列挙と不足assetのdownloadは省きます。castは検証器の明示選択であり、原作cast再現ではありません。
+
+追加loader callbackは実 `InitializeTimeline` 後・Play前に連続providerを登録します。実音声の開始後は既存Directorの通常deltaTime更新を使い、手動frame設定・seek・timescale加速を行いません。通常の楽曲終端とlive scene終了・Viewer復帰まで待ちます。native物理は初期化前に明示opt-outし、DLL復元や仮実装は行いません。
+
+Unity f3／D3D11で、選択したローカル実楽曲の自然再生を通常の楽曲終端・scene復帰まで確認し、`NaturalViewerPlaybackCompleted` で受け入れました。全authored keyの切替と、正durationのfade中間値を継続生成し、初回late-onlyを除く各owner更新を描画しました。owner値の欠落・前後の結合不一致・provider fault・実行時例外はいずれも0です。原作の追加起動・ARM・採取は不要でした。
+
+描画は実Viewer cameraを独立所有cameraへコピーする既存producerを使用します。full-viewport・mipなしのViewer RT設定と、明示した単一channel＋透明な第2channelを使います。source cameraのpost effect／stackは複製せず、原作の自然TextureMapping・S生成cameraや原作画素の証明にはしません。検証器はrepo外へ有限の集計・sample・preview画像を保存し、公開repoへ実値や画像を含めません。
+
+従来の2引数loaderに自動登録や新しい成功条件は追加しません。今回の自然再生は選択したローカル楽曲の追加previewに限定し、native cloth、全楽曲・全kind、原作からの時刻stream、時刻原点・音声epoch、原作最終画素の全面一致へ一般化しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 検証ブランチ：`codex/validate-original-live-integration`。成功済みの `feature/original-live-rendering`（`781ef89`）へ基盤修正を混ぜないための別ブランチです。本家PRを提出するものではありません。
 
 ## 基盤修正

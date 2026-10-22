@@ -100,6 +100,9 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
     }
 
     public void LoadLiveUma(List<LiveCharacterLoadData> characters)
+    { LoadLiveUma(characters, true); }
+
+    public void LoadLiveUma(List<LiveCharacterLoadData> characters, bool initializeNativePhysics)
     {
         for (int i = 0; i < characters.Count; i++)
         {
@@ -107,6 +110,7 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
             {
                 var umaContainer = new GameObject($"Chara_{characters[i].CharaEntry.Id}_{characters[i].CostumeId}").AddComponent<UmaContainerCharacter>();
                 umaContainer.IsLive = true;
+                umaContainer.InitializeNativePhysicsOnLoad = initializeNativePhysics;
                 umaContainer.CharaData = UmaDatabaseController.ReadCharaData(characters[i].CharaEntry);
                 var charObjs = Gallop.Live.Director.instance.charaObjs;
                 umaContainer.transform.parent = charObjs[i];
@@ -812,6 +816,12 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
     }
 
     public void LoadLive(LiveEntry live, List<LiveCharacterSelect> characters)
+    { LoadLive(live, characters, true, null); }
+
+    // Explicit integration entry point. Existing UI calls retain their original
+    // physics behavior and have no new registration or success condition.
+    public void LoadLive(LiveEntry live, List<LiveCharacterSelect> characters,
+        bool initializeNativePhysics, Action<Director> onTimelineReady)
     {
         characters.ForEach(a =>
         {
@@ -899,7 +909,7 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
                         liveCharacters = expandedCharacters;
                     }
 
-                    LoadLiveUma(liveCharacters);
+                    LoadLiveUma(liveCharacters, initializeNativePhysics);
 
                     var lyrics = LoadLiveLyrics(live.MusicId);
                     if (lyrics != null)
@@ -909,6 +919,7 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
                 {
                     Director.instance.InitializeUI();
                     Director.instance.InitializeTimeline(liveCharacters, UI.LiveMode);
+                    onTimelineReady?.Invoke(Director.instance);
                     Director.instance.InitializeMusic(live.MusicId, liveCharacters);
                     Director.instance.Play();
                 });

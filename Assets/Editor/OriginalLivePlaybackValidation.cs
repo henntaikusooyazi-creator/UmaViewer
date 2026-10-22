@@ -1,0 +1,289 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using Gallop.Live;
+using Gallop.Live.Rendering;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+using Object = UnityEngine.Object;
+using M = Gallop.Live.Rendering.OriginalCompositeProducerMath;
+using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
+
+// Selected-only local PlayMode acceptance. Actual assets and profile stay outside
+// the repository. Director supplies time through its normal audio/deltaTime path.
+[InitializeOnLoad]
+public static class OriginalLivePlaybackValidation
+{
+    const string Active = "OriginalLivePlaybackValidation.Active";
+    static string output;
+    static Result result;
+    static double started, playbackStarted;
+    static OriginalLiveContinuousProvider provider;
+    static OriginalLiveContinuousRenderer preview;
+    static RenderTexture target;
+    static int? selectedCamera;
+    static bool ending;
+    static Action<int> cameraHandler;
+    static Director director;
+    static float previousOwnerTime;
+    static int previousKey = int.MinValue;
+    static readonly HashSet<int> keys = new HashSet<int>();
+    static readonly List<Sample> samples = new List<Sample>();
+    static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
+    static OriginalLivePlaybackValidation()
+    {
+        if (SessionState.GetBool(Active, false))
+        {
+            if (SessionState.GetBool(Active + ".Ending", false))
+            { EditorApplication.delayCall += ExitSaved; return; }
+            EditorApplication.playModeStateChanged += State;
+            EditorApplication.update += Poll;
+            started = EditorApplication.timeSinceStartup;
+        }
+    }
+    public static void Run()
+    {
+        output = Path.GetFullPath(Argument("-liveOutput") ?? throw new ArgumentException("External output required"));
+        var repo = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        if (output.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || output == repo)
+            throw new ArgumentException("Keep playback results outside the repository");
+        Directory.CreateDirectory(output);
+        if (!int.TryParse(Argument("-liveMusicId"), out int id) || id <= 0) throw new ArgumentException("Explicit song required");
+        string profile = Argument("-liveProfile");
+        if (string.IsNullOrEmpty(profile) || new FileInfo(profile).Length > 65536) throw new ArgumentException("Bounded explicit profile required");
+        SessionState.SetBool(Active, true);
+        SessionState.SetBool(Active + ".Ending", false);
+        SessionState.SetString(Active + ".Output", output);
+        SessionState.SetInt(Active + ".Music", id);
+        SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
+        EditorApplication.playModeStateChanged += State;
+        EditorApplication.update += Poll;
+        EditorSceneManager.OpenScene("Assets/Scenes/Version2.unity");
+        started = EditorApplication.timeSinceStartup;
+        EditorApplication.EnterPlaymode();
+    }
+    static void State(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.EnteredPlayMode)
+        {
+            output = SessionState.GetString(Active + ".Output", "");
+            result = new Result { unity = Application.unityVersion, graphics = SystemInfo.graphicsDeviceType.ToString() };
+            started = EditorApplication.timeSinceStartup;
+            Application.logMessageReceived += Log;
+            try { Begin(); }
+            catch (Exception e) { Finish(e.ToString()); }
+        }
+        else if (state == PlayModeStateChange.EnteredEditMode && SessionState.GetBool(Active + ".Ending", false))
+        {
+            ExitSaved();
+        }
+    }
+    static void ExitSaved()
+    {
+        output = SessionState.GetString(Active + ".Output", "");
+        var saved = JsonUtility.FromJson<Result>(File.ReadAllText(Path.Combine(output, "playback.private.json")));
+        SessionState.SetBool(Active, false); SessionState.SetBool(Active + ".Ending", false);
+        EditorApplication.Exit(saved.status == "NaturalViewerPlaybackCompleted" ? 0 : 1);
+    }
+    static void Begin()
+    {
+        var main = UmaViewerMain.Instance;
+        if (!main || main.AbList == null) throw new InvalidOperationException("Real Viewer startup failed");
+        // Avoid unrelated icon/corpus/UI enumeration. Keep the real scene, builder,
+        // asset manager, database and live loader; select only one local song.
+        main.StopAllCoroutines(); main.enabled = false;
+        Config.Instance.DownloadMissingResources = false;
+        int id = SessionState.GetInt(Active + ".Music", 0);
+        var row = UmaDatabaseController.Instance.LiveData.First(x => Convert.ToInt32(x["music_id"]) == id);
+        var settings = UmaAssetManager.LoadAssetBundle(main.AbList["livesettings"]);
+        var text = settings.LoadAsset<TextAsset>(id.ToString());
+        if (!text) throw new InvalidOperationException("Local song settings missing");
+        var song = new LiveEntry(text.text) { MusicId = id, SongName = row["songname"].ToString(),
+            MemberCount = Convert.ToInt32(row["live_member_number"]), DefaultDress = Convert.ToInt32(row["default_main_dress"]) };
+        if (song.MemberCount < 1 || song.MemberCount > 18) throw new InvalidOperationException("Selected member bound");
+        var chara = UmaDatabaseController.Instance.CharaData.First(x => Convert.ToInt32(x["id"]) == 1001);
+        var entry = new CharaEntry { Id = Convert.ToInt32(chara["id"]), Name = chara["charaname"].ToString() };
+        var slots = new List<LiveCharacterSelect>();
+        for (int i = 0; i < song.MemberCount; i++)
+        {
+            var slot = new GameObject("Selected live member").AddComponent<LiveCharacterSelect>();
+            slot.CharaEntry = entry; slot.CostumeId = "0002_00_00"; slot.HeadCostumeId = "";
+            slots.Add(slot);
+        }
+        var selectedData = LiveCharacterLoadData.CaptureAll(slots);
+        var roots = Director.GetLivePreloadEntries(song, selectedData, true);
+        var all = roots.SelectMany(x => UmaAssetManager.SearchAB(main, x)).GroupBy(x => x.Name).Select(x => x.First()).ToArray();
+        result.preloadBundles = all.Length;
+        result.preloadBytes = all.Where(x => File.Exists(x.Path)).Sum(x => new FileInfo(x.Path).Length);
+        result.missingPreloads = all.Where(x => !File.Exists(x.Path)).Select(x => x.Name).ToArray();
+        if (all.Length > 1024 || result.preloadBytes > 1024L * 1024 * 1024 || result.missingPreloads.Length > 0)
+            throw new InvalidOperationException("Selected local preload bounds or availability failed");
+        UmaViewerUI.Instance.isRequireStage = true;
+        UmaViewerUI.Instance.isRecordVMD = false;
+        UmaViewerBuilder.Instance.LoadLive(song, slots, false, Attach);
+    }
+    static void Attach(Director loaded)
+    {
+        director = loaded;
+        var p = JsonUtility.FromJson<Profile>(File.ReadAllText(SessionState.GetString(Active + ".Profile", "")));
+        var profile = new M.ConfirmedProfile(p.fixedThickness, p.minimumThickness, p.angleDivisor,
+            p.secondaryOrigin, p.secondaryScale, p.durationMultiplier, p.kindBases);
+        var control = director._liveTimelineControl;
+        var tracks = control.data.worksheetList[0].multiCameraPosKeys;
+        // This acceptance deliberately qualifies a single authored track. Multi-
+        // track rendering requires the caller to provide both ordered bindings.
+        if (tracks.Count != 1) throw new InvalidOperationException("Single-track playback acceptance required");
+        var bindings = tracks.Select((track, index) => OriginalLiveTimelineRegistration.TrackBinding.FromTrack(index, track)).ToArray();
+        target = new RenderTexture(512, 288, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+            { name = "Explicit continuous Viewer preview", useMipMap = false, antiAliasing = 1 };
+        if (!target.Create()) throw new InvalidOperationException("Preview output unavailable");
+        var mapping = OriginalLiveContinuousRenderer.FullViewportMapping(target.height);
+        provider = new OriginalLiveContinuousProvider(control, profile, bindings,
+            selection => new OriginalLiveDrawInputResolver.Inputs(default, mapping));
+        var nodes = (GameObject[])typeof(Director).GetField("_cameraNodes", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(director);
+        var freeCamera = nodes[0].GetComponentInChildren<Camera>();
+        cameraHandler = index => selectedCamera = index;
+        control.OnUpdateCameraSwitcher += cameraHandler;
+        preview = new OriginalLiveContinuousRenderer(provider, bindings[0].TrackOrdinal, null,
+            frame => !selectedCamera.HasValue ? null : selectedCamera.Value < 0 ? freeCamera : control.GetCamera(selectedCamera.Value)?.camera,
+            Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target);
+        provider.FrameReady += Observe;
+        var canvas = new GameObject("Explicit Viewer preview").AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        var image = new GameObject("Continuous output").AddComponent<RawImage>(); image.transform.SetParent(canvas.transform, false);
+        image.texture = target; image.rectTransform.anchorMin = Vector2.zero; image.rectTransform.anchorMax = Vector2.one;
+        image.rectTransform.offsetMin = image.rectTransform.offsetMax = Vector2.zero;
+        result.timeLength = director.totalTime;
+        result.modelCount = director.CharaContainerScript.Count;
+        result.nativePhysicsSkipped = director.CharaContainerScript.All(x => !x.InitializeNativePhysicsOnLoad &&
+            typeof(UmaContainerCharacter).GetField("_cySpringController", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(x) == null &&
+            !(bool)typeof(UmaContainerCharacter).GetField("_cySpringLoaded", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(x));
+        result.meshRenderers = director.CharaContainerScript.Sum(x => x.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length);
+        result.status = "Playing";
+        playbackStarted = EditorApplication.timeSinceStartup;
+    }
+    static void Observe(OriginalLiveContinuousProvider.Frame frame)
+    {
+        result.frames++;
+        if (frame.Selections.Count != 1) { result.selectionFailures++; return; }
+        var item = frame.Selections[0]; var s = item.Selection;
+        if (!s.ComparisonClock.HasValue)
+        {
+            if (result.validOwnerFrames == 0) result.warmupLateOnlyFrames++;
+            else result.clockFailures++;
+            return;
+        }
+        var clock = s.ComparisonClock.Value;
+        if (result.validOwnerFrames > 0 && clock.ComparisonOwnerTime != previousOwnerTime) result.clockLinkFailures++;
+        result.validOwnerFrames++;
+        previousOwnerTime = clock.CurrentOwnerTime;
+        result.lastOwnerTime = previousOwnerTime;
+        if (clock.CurrentOwnerTime < clock.ComparisonOwnerTime) result.backwardUpdates++;
+        keys.Add(s.CurrentKeyFrame);
+        bool keyChanged = previousKey != s.CurrentKeyFrame;
+        if (keyChanged) { previousKey = s.CurrentKeyFrame; result.keyTransitions++; }
+        if (!s.KeyEnabled) result.disabledFrames++;
+        float? fade = item.Snapshot.Draw.Fade;
+        if (!fade.HasValue) result.unresolvedFadeFrames++;
+        else if (s.KeyEnabled && s.RawFadeDuration > 0 && fade.Value > 0 && fade.Value < 1) result.naturalFadeInteriorFrames++;
+        if (preview.LastException != null) result.renderFailures++;
+        if (provider.FrameCount <= 9000 && (samples.Count < 256) &&
+            (samples.Count == 0 || keyChanged || frame.Selected.Serial % 60 == 0 ||
+                (s.KeyEnabled && fade.HasValue && fade.Value > 0 && fade.Value < 1 && result.naturalFadeInteriorFrames % 8 == 1)))
+            samples.Add(new Sample { serial = frame.Selected.Serial, keyFrame = s.CurrentKeyFrame,
+                currentTime = clock.CurrentOwnerTime, comparisonTime = clock.ComparisonOwnerTime,
+                enabled = s.KeyEnabled, fade = fade.GetValueOrDefault(), renderStatus = preview.LastStatus });
+        if (result.validOwnerFrames == 1 || (result.naturalFadeInteriorFrames == 1) ||
+            (result.lastOwnerTime > 30 && !result.middleImage) || (result.lastOwnerTime > result.timeLength - 2 && !result.finalImage))
+        {
+            SaveImage(result.validOwnerFrames == 1 ? "start" : result.naturalFadeInteriorFrames == 1 ? "natural-fade" :
+                result.lastOwnerTime > result.timeLength - 2 ? "end" : "middle");
+            if (result.lastOwnerTime > 30) result.middleImage = true;
+            if (result.lastOwnerTime > result.timeLength - 2) result.finalImage = true;
+        }
+        if (result.frames % 60 == 0) Save();
+    }
+    static void SaveImage(string name)
+    {
+        var previous = RenderTexture.active;
+        var pixels = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false, true);
+        try { RenderTexture.active = target; pixels.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0); pixels.Apply();
+            File.WriteAllBytes(Path.Combine(output, name + ".private.png"), pixels.EncodeToPNG()); }
+        finally { RenderTexture.active = previous; Object.Destroy(pixels); }
+    }
+    static void Log(string condition, string stack, LogType type)
+    {
+        if (result != null && type == LogType.Exception)
+        { result.exceptions++; if (result.firstException == null) result.firstException = condition + "\n" + stack; }
+    }
+    static void Poll()
+    {
+        if (ending || !SessionState.GetBool(Active, false)) return;
+        if (EditorApplication.timeSinceStartup - started > 240) { Finish("Bounded playback timeout"); return; }
+        if (result != null && result.exceptions > 0) { Finish(result.firstException); return; }
+        if (result == null || provider == null) return;
+        result.renderedFrames = preview.RenderCount;
+        result.ownerKeys = keys.Count;
+        result.audioSources = director ? director.liveMusic.sourceList.Count : result.audioSources;
+        if (director && director.liveMusic.sourceList.Count > 0)
+        {
+            result.audioTime = Math.Max(result.audioTime, director.liveMusic.sourceList[0].time);
+            result.audioPlayingObserved |= director.liveMusic.sourceList[0].isPlaying;
+        }
+        if (director && (bool)typeof(Director).GetField("isExit", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(director))
+            result.naturalExitObserved = true;
+        // Wait for the real end-of-song transition and destruction of the live
+        // Director. No seek, early final-time assignment or synthetic clock.
+        if (result.naturalExitObserved && !director && SceneManager.GetSceneByName("Version2").isLoaded && result.timeLength > 1)
+        {
+            bool pass = result.frames >= 100 && result.clockFailures == 0 && result.clockLinkFailures == 0 &&
+                result.selectionFailures == 0 && result.renderFailures == 0 && result.exceptions == 0 &&
+                result.modelCount > 0 && result.meshRenderers > 0 && result.nativePhysicsSkipped &&
+                result.naturalFadeInteriorFrames > 0 && result.disabledFrames > 0 && result.ownerKeys >= 3 &&
+                preview.RenderCount > 100 && result.audioPlayingObserved && result.audioTime > 1 &&
+                provider.Bridge.FaultCount == 0 && provider.ConsumerFaultCount == 0 && result.lastOwnerTime >= result.timeLength &&
+                result.warmupLateOnlyFrames <= 1 && preview.RenderCount == result.validOwnerFrames;
+            Finish(pass ? null : "Natural playback acceptance predicate failed");
+        }
+    }
+    static void Save()
+    {
+        if (result == null || string.IsNullOrEmpty(output)) return;
+        File.WriteAllText(Path.Combine(output, "playback.private.json"), JsonUtility.ToJson(result, true));
+        File.WriteAllText(Path.Combine(output, "samples.private.json"), JsonUtility.ToJson(new Samples { rows = samples.ToArray() }, true));
+    }
+    static void Finish(string failure)
+    {
+        if (ending) return; ending = true;
+        SessionState.SetBool(Active + ".Ending", true);
+        if (result == null) result = new Result();
+        result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
+        result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
+        if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
+        preview?.Dispose(); provider?.Dispose();
+        if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
+        Save(); Application.logMessageReceived -= Log;
+        EditorApplication.ExitPlaymode();
+    }
+    [Serializable] class Profile { public float fixedThickness, minimumThickness, angleDivisor, secondaryOrigin, secondaryScale, durationMultiplier; public float[] kindBases; }
+    [Serializable] class Samples { public Sample[] rows; }
+    [Serializable] class Sample { public long serial; public int keyFrame; public float currentTime, comparisonTime, fade; public bool enabled; public string renderStatus; }
+    [Serializable] class Result
+    {
+        public string status = "Starting", unity, graphics, failure, firstException;
+        public int preloadBundles, modelCount, meshRenderers, frames, validOwnerFrames, warmupLateOnlyFrames, selectionFailures, clockFailures, clockLinkFailures,
+            backwardUpdates, keyTransitions, disabledFrames, unresolvedFadeFrames, naturalFadeInteriorFrames, renderFailures,
+            renderedFrames, ownerKeys, audioSources, exceptions, providerFaults;
+        public long preloadBytes;
+        public float timeLength, lastOwnerTime, audioTime;
+        public double playbackWallSeconds;
+        public string[] missingPreloads;
+        public bool nativePhysicsSkipped, audioPlayingObserved, finalImage, middleImage, naturalExitObserved;
+        public bool OriginalVerified = false, runtime_contract = false, SourceToViewerClockContract = false;
+        public string Phase257cause = "Unknown", textureMapping = "ExplicitFullViewportViewerPreview", clockSource = "NaturalViewerDirectorOwnerUpdates";
+    }
+}
