@@ -68,3 +68,17 @@ GPU試験のgeometry・key・TextureMappingは人工入力です。原作の保�
 保存された自然cueのFだけではowner比較値・fade・TextureMappingを生成せず、未指定時の描画保留を確認しています。対象の保存key一覧には正のdurationCountを持つ有効keyがなく、自然な時間遷移をこの楽曲データから証明できません。追加runは行わず、次の採取には、別途確認した自然keyの有効値・正のdurationCount・選択ownerとの対応が必要です。
 
 角度の観測元runの元Pending判定は変更しません。保存された限定観測の値との比較であり、同runの停止成功、通常ライブの自然再生、最終画素の原作一致を示すものではありません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
+## 正のdurationを持つ自然keyのfade
+
+別楽曲の限定調査で見つかった、有効・nonzero kind・正のdurationCountを持つkeyを原作で自然再生し、同じkey・ownerに属する時刻2値、比較整数、setter入力・readbackを採取しました。期間内15点と終点1点のfadeが、確認済みproducer演算とfloat32 bit一致しました。開始値ゼロの直接採取や、すべてのkind・下降fadeまで確認した結果ではありません。
+
+`-ConfirmedNaturalFade <公開repo外の明示JSON>` は、実typed cueと独立したowner観測を受け取る追加の検証入力です。single-track、64key以下・128観測以下・128KiB以下に限定し、無効key・zero durationの観測は受け入れません。通常のproducer mathへこの拒否条件を追加したわけではありません。
+
+実 `AlterUpdate` に2つの保存owner時刻を与え、実key選択 → 同じSelection → resolver → coverage → compositorを確認しました。**1730/1730 PASS**、従来1524＋追加206です。16点すべてでkey状態・比較整数・生成fadeが保存実測と一致し、Built-in／URP14では各点の64×32全RGBAが、独立したsetter入力を明示する経路と一致しました。最初と最後のGPU画像が変化すること、mapping不足とclock解除時の出力保持も確認しています。
+
+このsingle SelectionのGPU試験には人工の描画色・geometry設定・TextureMappingと、明示的に透明な第2channelを使います。第2の自然trackや原作cameraを推定していません。通常ライブへの自動登録、音声epoch、原作最終画面への画素一致は未成立です。原作runは今回独立して正常停止・通常終了・所有接続復元を確認し、過去runのPendingは保持します。
+
+私有引数を省略した公開試験は **248/248 PASS**。従来198＋人工の正duration入力50件で、summaryの `naturalFadeSource` を `SyntheticPositiveFadeInputs` とします。私有の自然観測を明示した場合は `ExplicitLocalNaturalKeyAndOwnerObservations` と区別します。zero durationの拒否例も確認しました。原作のkey・owner値、asset、native採取コード・receiptは公開repoへ含めません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。

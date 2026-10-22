@@ -105,3 +105,9 @@ opt-in直後でowner更新がまだない場合と、`ClearConfirmedOwnerClock()
 既存snapshot、providerの評価済み値、明示済み算術依存の優先を保ちます。profileなしのconstructorは従来どおりです。kind 0の未取得receiver状態、Viewer型にないsecondary source、TextureMapping、camera帰属はprofileで補完しません。通常ライブへの自動登録も追加しません。
 
 実値profileを外部入力として実Control → resolver → coverage → GPUまで検証します。これは人工geometry・typed keyによる結合試験であり、自然楽曲の通し受入ではありません。最新件数はPROGRESSとINTEGRATIONに記載します。
+
+## 自然な有効keyでのfade検証
+
+別楽曲で正のdurationを持つ有効keyを自然採取し、同じkey・ownerの現在／比較時刻から生成したfadeをsetter入力・readbackと照合しました。期間内15点・終点1点を確認し、その実typed keyを実Controlで選択して既存profile resolverへ接続する追加受入も通っています。raw durationを既知の倍率・floorへ通し、ViewerFrameを比較整数の代用にはしません。
+
+実時刻・key・receiptは公開repo外の明示検証入力です。既存 `UseConfirmedOwnerClock` / `WithConfirmedProfile` の接続を使い、通常ライブへの新しい自動登録や元cameraへの変更は追加しません。GPU側のTextureMappingと描画素材は人工入力のままです。原作とViewerの時刻原点・音声epoch、自然楽曲通し、開始ゼロや下降fade・全kindの実測は別の残件です。`SourceToViewerClockContract=false` を維持します。

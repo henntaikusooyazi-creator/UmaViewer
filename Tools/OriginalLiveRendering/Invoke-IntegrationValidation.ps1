@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string] $OutputPath,
     [string] $ConfirmedProducerProfile,
     [string] $ConfirmedOwnerClock,
-    [string] $ConfirmedNaturalCue
+    [string] $ConfirmedNaturalCue,
+    [string] $ConfirmedNaturalFade
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -37,6 +38,10 @@ try {
     if ($ConfirmedNaturalCue) {
         $cue = (Resolve-Path -LiteralPath $ConfirmedNaturalCue).Path
         $arguments += @('-confirmedNaturalCue', ('"' + $cue + '"'))
+    }
+    if ($ConfirmedNaturalFade) {
+        $fade = (Resolve-Path -LiteralPath $ConfirmedNaturalFade).Path
+        $arguments += @('-confirmedNaturalFade', ('"' + $fade + '"'))
     }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()

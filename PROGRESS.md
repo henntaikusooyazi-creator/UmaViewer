@@ -4,6 +4,12 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 自然な正duration keyのfade接続
+
+別楽曲の有効keyから期間内15点・終点1点を自然採取し、実owner時刻・比較整数・raw durationを使う生成fadeが原作setter入力とbit一致しました。同じ実keyを選択する実Control → resolver → GPUもBuilt-in／URP14の全RGBAで一致し、従来1524＋追加206の **1730/1730 PASS**。公開用の人工入力は **248/248 PASS** です。[検証範囲](Tools/OriginalLiveRendering/INTEGRATION.md#正のdurationを持つ自然keyのfade) を参照してください。
+
+今回の原作runは独立して正常停止・通常終了・所有接続復元を確認しました。過去のPending記録は変更しません。自然fadeの実測は1keyの限定区間であり、原作とViewerの時刻原点、自然TextureMapping・camera、楽曲通しの受入は別の未確定点です。各false判定と `Phase257cause=Unknown` を維持します。
+
 ## 実楽曲cueの角度生成と自然fade条件
 
 保存した実楽曲のtyped cueとauthored curveを実Controlへ渡し、確認済みprofileから生成したshader角度を独立したreceiverの保存値と照合しました。184観測の角度2成分がすべてbit一致し、Built-in／URP14の人工GPU画像も全RGBAで一致しました。従来228件を含む **1524/1524 PASS** です。[入力・検証・制約](Tools/OriginalLiveRendering/INTEGRATION.md#保存した実楽曲cueからの角度生成) を参照してください。

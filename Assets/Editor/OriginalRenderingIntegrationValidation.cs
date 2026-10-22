@@ -32,6 +32,8 @@ public static class OriginalRenderingIntegrationValidation
         public string confirmedProfileSource;
         public int naturalCueChecks, naturalCueRows, naturalCueKeys, naturalCuePositiveDurationKeys;
         public string naturalCueSource = "NotProvided";
+        public int naturalFadeChecks, naturalFadeRows, naturalFadeBuiltinFrames, naturalFadeUrpFrames;
+        public string naturalFadeSource = "NotProvided";
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
         public bool TestOnly = true, OriginalVerified = false, runtime_contract = false;
@@ -84,6 +86,14 @@ public static class OriginalRenderingIntegrationValidation
         public int gpuFrame;
     }
     static NaturalCueData naturalCueData;
+    [Serializable] sealed class NaturalFadeData
+    {
+        public float multiplier;
+        public int trackOrdinal, compositeIndex;
+        public LiveTimelineKeyMultiCameraPositionData[] keys;
+        public OwnerClockSample[] samples;
+    }
+    static NaturalFadeData naturalFadeData;
     static float FromBits(int bits) => BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
     static int FloatBits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
@@ -203,8 +213,43 @@ public static class OriginalRenderingIntegrationValidation
                 result.naturalCuePositiveDurationKeys = naturalCueData.tracks.Sum(t => t.keys.Count(k =>
                     k.enableMultiCamera && M.ResolveDurationCount(k.fadeTime, confirmedProfile.DurationMultiplier) > 0));
             }
+            int fadeArg = Array.IndexOf(args, "-confirmedNaturalFade");
+            if (fadeArg >= 0)
+            {
+                string path = args[fadeArg + 1];
+                if (new FileInfo(path).Length > 131072) throw new InvalidOperationException("Bounded natural fade input required.");
+                naturalFadeData = JsonUtility.FromJson<NaturalFadeData>(File.ReadAllText(path));
+                if (profileArg < 0 || naturalFadeData == null || naturalFadeData.trackOrdinal != 0 ||
+                    naturalFadeData.compositeIndex < 0 || naturalFadeData.compositeIndex > 1 ||
+                    naturalFadeData.keys == null || naturalFadeData.keys.Length < 1 || naturalFadeData.keys.Length > 64 ||
+                    naturalFadeData.keys.Any(k => k == null || (k.interpolateType == LiveCameraInterpolateType.Curve &&
+                        (k.curve == null || k.curve.length == 0))) ||
+                    naturalFadeData.samples == null || naturalFadeData.samples.Length < 2 || naturalFadeData.samples.Length > 128 ||
+                    naturalFadeData.samples.Any(s => s == null || !s.enabled || s.kind == 0 ||
+                        M.ResolveDurationCount(FromBits(s.rawDurationBits), confirmedProfile.DurationMultiplier) <= 0))
+                    throw new InvalidOperationException("Explicit single-track keys, positive duration samples and confirmed dependencies required.");
+                result.naturalFadeSource = "ExplicitLocalNaturalKeyAndOwnerObservations";
+            }
+            else
+            {
+                // Public artificial dependencies exercise this path without any
+                // game data. Owner projection is independent of Viewer frame math.
+                int duration = (int)System.Math.Floor((double)profileData.durationMultiplier);
+                if (duration < 4) throw new InvalidOperationException("Synthetic positive fade needs a positive duration.");
+                var current = Key(8, 0, false); current.fadeTime = 1;
+                current.maskType = (LiveTimelineKeyMultiCameraPositionData.MaskType)3;
+                var next = Key(1000, 0, false); next.enableMultiCamera = false;
+                naturalFadeData = new NaturalFadeData { multiplier = 64, trackOrdinal = 0, compositeIndex = 0,
+                    keys = new[] { current, next }, samples = new[] { 2, duration / 2, duration }.Select(delta =>
+                        new OwnerClockSample { currentTimeBits = FloatBits((8 + delta) / 64f),
+                            comparisonTimeBits = FloatBits((7 + delta) / 64f), currentFrame = 8 + delta,
+                            comparisonFrame = 7 + delta, keyFrame = 8, rawDurationBits = FloatBits(1),
+                            enabled = true, kind = 3, inputFadeBits = FloatBits((float)delta / duration) }).ToArray() };
+                result.naturalFadeSource = "SyntheticPositiveFadeInputs";
+            }
+            result.naturalFadeRows = naturalFadeData.samples.Length;
             ExerciseConfirmedMath(); ExerciseOwnerClockMath(); ExerciseThicknessMath(); Exercise(false); Exercise(true);
-            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks - result.naturalCueChecks;
+            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks - result.naturalCueChecks - result.naturalFadeChecks;
             result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
@@ -312,6 +357,7 @@ public static class OriginalRenderingIntegrationValidation
             ExerciseConfirmedProvider(control, sheet, urp);
             ExerciseOwnerClockProvider(control, sheet, urp);
             if (naturalCueData != null) ExerciseNaturalCueAngles(control, sheet, urp);
+            if (naturalFadeData != null) ExerciseNaturalFade(control, sheet, urp);
         }
         finally
         {
@@ -323,6 +369,106 @@ public static class OriginalRenderingIntegrationValidation
             Check(before == Resources.FindObjectsOfTypeAll<RenderTexture>().Count(r => r.name.StartsWith("Original.")) && !Resources.FindObjectsOfTypeAll<Camera>().Any(c => c.name == "Original.ExplicitCamera"), "Owned camera/RT cleanup: " + urp);
         }
     }
+    static void ExerciseNaturalFade(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int start = result.checks;
+        var bridge = new OriginalLiveTimelineBridge();
+        int renders = 0;
+        try
+        {
+            Check(control.OriginalCompositeBridge == null, "Natural fade fixture owns only its explicit bridge.");
+            sheet.multiCameraPosKeys = new List<LiveTimelineMultiCameraPositionData> {
+                new LiveTimelineMultiCameraPositionData { MultiCameraNo = naturalFadeData.compositeIndex,
+                    keys = new LiveTimelineKeyMultiCameraPositionDataList { thisList = naturalFadeData.keys.ToList() } } };
+            bridge.BindTrack(naturalFadeData.trackOrdinal, naturalFadeData.compositeIndex);
+            control.OriginalCompositeBridge = bridge;
+            bridge.UseConfirmedOwnerClock(naturalFadeData.multiplier);
+            Texture2D Solid(Color value)
+            {
+                var texture = Own(new Texture2D(1, 1, TextureFormat.RGBA32, false, true));
+                texture.SetPixel(0, 0, value); texture.Apply(); return texture;
+            }
+            var input = Solid(new Color(1, .125f, .25f, 1));
+            var background = Solid(new Color(.125f, .5f, .75f, 1));
+            var empty = Solid(Color.clear); var output = Target(64, 32);
+            bool mapping = false, reference = false;
+            OwnerClockSample sample = naturalFadeData.samples[0];
+            A.Snapshot resolved = default;
+            A.Unresolved missing = A.Unresolved.None;
+            using (var coverage = new OriginalMaskCoverageGenerator(Shader.Find(OriginalMaskCoverageGenerator.ShaderName)))
+            using (var renderer = new OriginalMultiCameraRenderer(Shader.Find(OriginalMultiCameraRenderer.ShaderName), RenderTextureFormat.ARGBFloat))
+            {
+                var resolver = new OriginalLiveDrawInputResolver(selection =>
+                    new OriginalLiveDrawInputResolver.Inputs(
+                        new A.DrawState(reference ? (float?)FromBits(sample.inputFadeBits) : null, null, null),
+                        mapping ? (A.TextureMapping?)new A.TextureMapping(Identity, 1, Identity, 0) : null)
+                    .WithConfirmedProfile(confirmedProfile));
+                bridge.FrameReady += frame =>
+                {
+                    if (!frame.TryGetTrack(naturalFadeData.trackOrdinal, out var selection)) return;
+                    resolved = resolver.Resolve(selection);
+                    if (!resolved.TryCreatePass0Parameters(out var parameters, out missing)) return;
+                    // A single natural Selection supplies the active mask. The
+                    // second channel is explicitly transparent synthetic input.
+                    renderer.Render(background, coverage.GenerateSubmission(input, 64, 32, parameters),
+                        new OriginalMultiCameraRenderer.Submission(empty,
+                            OriginalMultiCameraRenderer.InputEncoding.StraightColorWithCoverage), output);
+                    renders++;
+                };
+                void OwnerTick(OwnerClockSample value)
+                {
+                    sample = value;
+                    Field("_currentLiveTime").SetValue(control, FromBits(value.comparisonTimeBits));
+                    control.AlterUpdate(FromBits(value.currentTimeBits)); control.AlterLateUpdate();
+                    Check(bridge.FaultCount == 0, "Natural owner update completes without bridge faults.");
+                }
+                OwnerTick(sample);
+                Check(renders == 0 && missing == A.Unresolved.TextureMapping &&
+                    FloatBits(resolved.Draw.Fade.Value) == sample.inputFadeBits,
+                    "Natural owner/key fade resolves while missing mapping still withholds GPU output.");
+                mapping = true;
+                A.Snapshot firstSnapshot = default; Color32[] firstPixels = null, lastPixels = null;
+                foreach (var value in naturalFadeData.samples)
+                {
+                    reference = false; OwnerTick(value);
+                    var selection = bridge.LastFrame.Selections.Single();
+                    var clock = selection.ComparisonClock.Value;
+                    Check(selection.CurrentKeyFrame == value.keyFrame && selection.KeyEnabled == value.enabled &&
+                        FloatBits(selection.RawFadeDuration) == value.rawDurationBits && selection.Cue.Values.Kind == value.kind &&
+                        selection.Cue.Source.CompositeIndex == naturalFadeData.compositeIndex,
+                        "Actual Control selects the independently sampled natural key and explicit composite binding.");
+                    Check(clock.Current == value.currentFrame && clock.Comparison == value.comparisonFrame &&
+                        FloatBits(clock.CurrentOwnerTime) == value.currentTimeBits &&
+                        FloatBits(clock.ComparisonOwnerTime) == value.comparisonTimeBits,
+                        "The same Selection preserves both exact native owner times and comparison integers.");
+                    Check(resolved.Draw.Fade.HasValue && FloatBits(resolved.Draw.Fade.Value) == value.inputFadeBits &&
+                        missing == A.Unresolved.None,
+                        "Natural key duration and owner pair generate the exact original setter fade bits.");
+                    var actualPixels = Read(output);
+                    if (firstPixels == null) { firstPixels = actualPixels; firstSnapshot = resolved; }
+                    lastPixels = actualPixels;
+                    reference = true; OwnerTick(value);
+                    Check(Read(output).SequenceEqual(actualPixels),
+                        "Generated natural fade and independently saved setter fade match every GPU RGBA pixel: " + urp);
+                }
+                Check(renders == naturalFadeData.samples.Length * 2 && !firstPixels.SequenceEqual(lastPixels),
+                    "Natural fade progresses through distinct GPU images to its sampled endpoint: " + urp);
+                Check(FloatBits(firstSnapshot.Draw.Fade.Value) == naturalFadeData.samples[0].inputFadeBits,
+                    "Earlier natural fade snapshots remain immutable.");
+                reference = false; bridge.ClearConfirmedOwnerClock(); var preserved = Read(output); int before = renders;
+                OwnerTick(naturalFadeData.samples.Last());
+                Check(renders == before && missing == A.Unresolved.Fade && !resolved.Draw.Fade.HasValue &&
+                    Read(output).SequenceEqual(preserved), "Cleared natural owner clock preserves output without a Viewer-frame fallback.");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(control.OriginalCompositeBridge, bridge)) control.OriginalCompositeBridge = null;
+            result.naturalFadeChecks += result.checks - start;
+            if (urp) result.naturalFadeUrpFrames += renders; else result.naturalFadeBuiltinFrames += renders;
+        }
+    }
+
     static void ExerciseNaturalCueAngles(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
     {
         int start = result.checks;

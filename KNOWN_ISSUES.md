@@ -29,7 +29,7 @@
 - PS1の境界線色、全楽曲・全frame・全解像度での再現：未完了。
 - 元Viewer f1の通常ライブ受入と、通常ライブへの自動切替：未実施。自動切替は今回の対象外です。
 - owner比較入力の228チェックは人工geometry・typed keyによる実Control→GPU受入です。原作setterとの保存比較は無効keyの終点値を含む限定区間であり、自然なfade遷移の受入へ広げません。`SourceToViewerClockContract=false`。
-- 後続の1524チェックでは保存した実楽曲cueからの角度生成を確認しましたが、対象の保存keyには正のdurationCountを持つ有効keyがありません。同じ区間の採取反復だけでは自然fade遷移を証明できず、別途確認した自然key条件とowner対応が次の採取条件です。TextureMappingの自然供給も未確定です。
+- 1524チェック時点の保存楽曲には正のdurationCountを持つ有効keyがありませんでした。後続の別楽曲では1keyの期間内15点・終点1点を自然採取し、owner比較値から生成したfadeと実Control→GPUを1730チェックで確認しました。開始値ゼロ、下降fade、他kindや他keyへ一般化せず、TextureMappingの自然供給も未確定です。
 - 過去の原作F採取runの停止判定：`PendingManualRecovery`。今回の公開準備で過去の判定を書き換えません。
 
 ## 明示利用時の制約
