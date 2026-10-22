@@ -2,9 +2,12 @@ param(
     [Parameter(Mandatory)][string] $UnityExecutable,
     [Parameter(Mandatory)][string] $OutputPath,
     [Parameter(Mandatory)][int] $MusicId,
-    [Parameter(Mandatory)][string] $ConfirmedProducerProfile
+    [Parameter(Mandatory)][string] $ConfirmedProducerProfile,
+    [ValidateRange(0, 7)][int] $RightTrack = 0,
+    [ValidateRange(-1, 7)][int] $LeftTrack = -1
 )
 $ErrorActionPreference = 'Stop'
+if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $output = [IO.Path]::GetFullPath($OutputPath)
 if ($output -eq $repo -or $output.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
@@ -37,6 +40,7 @@ try {
         '-executeMethod', 'OriginalLivePlaybackValidation.Run', '-liveMusicId', $MusicId,
         '-liveProfile', ('"' + $profile + '"'), '-liveOutput', ('"' + $output + '"'),
         '-logFile', ('"' + (Join-Path $output 'unity.private.log') + '"'))
+    $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()
 }

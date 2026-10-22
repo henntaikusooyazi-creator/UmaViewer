@@ -34,6 +34,10 @@ public static class OriginalLivePlaybackValidation
     static int previousKey = int.MinValue;
     static readonly HashSet<int> keys = new HashSet<int>();
     static readonly List<Sample> samples = new List<Sample>();
+    static readonly HashSet<int> leftKeys = new HashSet<int>();
+    static int rightTrack, leftTrack = -1, previousLeftKey = int.MinValue;
+    static Func<OriginalLiveTimelineBridge.Frame, Camera> resolveBaseCamera;
+    static OriginalLiveChannelEvidence channelEvidence;
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -56,10 +60,16 @@ public static class OriginalLivePlaybackValidation
         if (!int.TryParse(Argument("-liveMusicId"), out int id) || id <= 0) throw new ArgumentException("Explicit song required");
         string profile = Argument("-liveProfile");
         if (string.IsNullOrEmpty(profile) || new FileInfo(profile).Length > 65536) throw new ArgumentException("Bounded explicit profile required");
+        int selectedRight = Argument("-liveRightTrack") == null ? 0 : int.Parse(Argument("-liveRightTrack"));
+        int selectedLeft = Argument("-liveLeftTrack") == null ? -1 : int.Parse(Argument("-liveLeftTrack"));
+        if (selectedRight < 0 || selectedRight > 7 || selectedLeft < -1 || selectedLeft > 7 || selectedLeft == selectedRight)
+            throw new ArgumentException("Explicit distinct ordered track ordinals required");
         SessionState.SetBool(Active, true);
         SessionState.SetBool(Active + ".Ending", false);
         SessionState.SetString(Active + ".Output", output);
         SessionState.SetInt(Active + ".Music", id);
+        SessionState.SetInt(Active + ".Right", selectedRight);
+        SessionState.SetInt(Active + ".Left", selectedLeft);
         SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
         EditorApplication.playModeStateChanged += State;
         EditorApplication.update += Poll;
@@ -135,10 +145,15 @@ public static class OriginalLivePlaybackValidation
             p.secondaryOrigin, p.secondaryScale, p.durationMultiplier, p.kindBases);
         var control = director._liveTimelineControl;
         var tracks = control.data.worksheetList[0].multiCameraPosKeys;
-        // This acceptance deliberately qualifies a single authored track. Multi-
-        // track rendering requires the caller to provide both ordered bindings.
-        if (tracks.Count != 1) throw new InvalidOperationException("Single-track playback acceptance required");
-        var bindings = tracks.Select((track, index) => OriginalLiveTimelineRegistration.TrackBinding.FromTrack(index, track)).ToArray();
+        rightTrack = SessionState.GetInt(Active + ".Right", 0); leftTrack = SessionState.GetInt(Active + ".Left", -1);
+        bool dual = leftTrack >= 0;
+        if ((!dual && (tracks.Count != 1 || rightTrack != 0)) || tracks.Count > 8 || rightTrack >= tracks.Count || leftTrack >= tracks.Count)
+            throw new InvalidOperationException("Explicit channels must match the loaded authored tracks");
+        var bindings = new List<OriginalLiveTimelineRegistration.TrackBinding> {
+            OriginalLiveTimelineRegistration.TrackBinding.FromTrack(rightTrack, tracks[rightTrack]) };
+        if (dual) bindings.Add(OriginalLiveTimelineRegistration.TrackBinding.FromTrack(leftTrack, tracks[leftTrack]));
+        result.channelCount = bindings.Count; result.rightTrack = rightTrack; result.leftTrack = leftTrack;
+        result.expectedKeyStates = tracks[rightTrack].keys.Count + (dual ? tracks[leftTrack].keys.Count : 0);
         target = new RenderTexture(512, 288, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
             { name = "Explicit continuous Viewer preview", useMipMap = false, antiAliasing = 1 };
         if (!target.Create()) throw new InvalidOperationException("Preview output unavailable");
@@ -149,9 +164,9 @@ public static class OriginalLivePlaybackValidation
         var freeCamera = nodes[0].GetComponentInChildren<Camera>();
         cameraHandler = index => selectedCamera = index;
         control.OnUpdateCameraSwitcher += cameraHandler;
-        preview = new OriginalLiveContinuousRenderer(provider, bindings[0].TrackOrdinal, null,
-            frame => !selectedCamera.HasValue ? null : selectedCamera.Value < 0 ? freeCamera : control.GetCamera(selectedCamera.Value)?.camera,
-            Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target);
+        resolveBaseCamera = frame => !selectedCamera.HasValue ? null : selectedCamera.Value < 0 ? freeCamera : control.GetCamera(selectedCamera.Value)?.camera;
+        preview = new OriginalLiveContinuousRenderer(provider, rightTrack, dual ? (int?)leftTrack : null,
+            resolveBaseCamera, Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target, dual);
         provider.FrameReady += Observe;
         var canvas = new GameObject("Explicit Viewer preview").AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         var image = new GameObject("Continuous output").AddComponent<RawImage>(); image.transform.SetParent(canvas.transform, false);
@@ -168,6 +183,7 @@ public static class OriginalLivePlaybackValidation
     }
     static void Observe(OriginalLiveContinuousProvider.Frame frame)
     {
+        if (result.channelCount == 2) { ObserveTwo(frame); return; }
         result.frames++;
         if (frame.Selections.Count != 1) { result.selectionFailures++; return; }
         var item = frame.Selections[0]; var s = item.Selection;
@@ -207,6 +223,55 @@ public static class OriginalLivePlaybackValidation
         }
         if (result.frames % 60 == 0) Save();
     }
+    static void ObserveTwo(OriginalLiveContinuousProvider.Frame frame)
+    {
+        result.frames++;
+        if (frame.Selections.Count != 2) { result.selectionFailures++; return; }
+        var r = frame.Selections.Single(x => x.Selection.TrackOrdinal == rightTrack);
+        var l = frame.Selections.Single(x => x.Selection.TrackOrdinal == leftTrack);
+        bool rc = r.Selection.ComparisonClock.HasValue, lc = l.Selection.ComparisonClock.HasValue;
+        if (!rc || !lc)
+        {
+            if (!rc && !lc && result.validOwnerFrames == 0) result.warmupLateOnlyFrames++;
+            else result.clockFailures++;
+            return;
+        }
+        var clock = r.Selection.ComparisonClock.Value; var other = l.Selection.ComparisonClock.Value;
+        if (clock.CurrentOwnerTime != other.CurrentOwnerTime || clock.ComparisonOwnerTime != other.ComparisonOwnerTime ||
+            clock.Current != other.Current || clock.Comparison != other.Comparison) result.clockLinkFailures++;
+        if (result.validOwnerFrames > 0 && clock.ComparisonOwnerTime != previousOwnerTime) result.clockLinkFailures++;
+        result.validOwnerFrames++; previousOwnerTime = clock.CurrentOwnerTime; result.lastOwnerTime = previousOwnerTime;
+        if (clock.CurrentOwnerTime < clock.ComparisonOwnerTime) result.backwardUpdates++;
+        keys.Add(r.Selection.CurrentKeyFrame); leftKeys.Add(l.Selection.CurrentKeyFrame);
+        bool changed = previousKey != r.Selection.CurrentKeyFrame || previousLeftKey != l.Selection.CurrentKeyFrame;
+        if (previousKey != r.Selection.CurrentKeyFrame) { previousKey = r.Selection.CurrentKeyFrame; result.keyTransitions++; }
+        if (previousLeftKey != l.Selection.CurrentKeyFrame) { previousLeftKey = l.Selection.CurrentKeyFrame; result.keyTransitions++; }
+        if (!r.Selection.KeyEnabled || !l.Selection.KeyEnabled) result.disabledFrames++;
+        if (!r.Snapshot.Draw.Fade.HasValue || !l.Snapshot.Draw.Fade.HasValue) result.unresolvedFadeFrames++;
+        if (r.Selection.KeyEnabled && l.Selection.KeyEnabled)
+        {
+            result.bothEnabledFrames++;
+            if (preview.LastStatus == "RenderedContinuousViewerCameras" && preview.LastTransparentChannels == 0) result.bothRenderedFrames++;
+            if (channelEvidence == null && result.bothRenderedFrames == 24)
+                channelEvidence = new OriginalLiveChannelEvidence(preview, rightTrack, leftTrack, resolveBaseCamera);
+        }
+        if (preview.LastTransparentChannels != 0 && preview.LastUnresolved != A.Unresolved.None) result.inactiveUnknownPreservedFrames++;
+        if (preview.LastException != null) result.renderFailures++;
+        if (channelEvidence != null && channelEvidence.Evidence.complete && !result.channelEvidenceCollected)
+        { channelEvidence.Save(Path.Combine(output, "channels")); result.channelEvidenceCollected = true; }
+        if (samples.Count < 256 && (samples.Count == 0 || changed || frame.Selected.Serial % 60 == 0))
+            samples.Add(new Sample { serial = frame.Selected.Serial, keyFrame = r.Selection.CurrentKeyFrame, leftKeyFrame = l.Selection.CurrentKeyFrame,
+                currentTime = clock.CurrentOwnerTime, comparisonTime = clock.ComparisonOwnerTime,
+                enabled = r.Selection.KeyEnabled, leftEnabled = l.Selection.KeyEnabled, fade = r.Snapshot.Draw.Fade.GetValueOrDefault(),
+                leftFade = l.Snapshot.Draw.Fade.GetValueOrDefault(), renderStatus = preview.LastStatus });
+        if (result.validOwnerFrames == 1 || (result.lastOwnerTime > 30 && !result.middleImage) || (result.lastOwnerTime > result.timeLength - 2 && !result.finalImage))
+        {
+            SaveImage(result.validOwnerFrames == 1 ? "start" : result.lastOwnerTime > result.timeLength - 2 ? "end" : "middle");
+            if (result.lastOwnerTime > 30) result.middleImage = true;
+            if (result.lastOwnerTime > result.timeLength - 2) result.finalImage = true;
+        }
+        if (result.frames % 60 == 0) Save();
+    }
     static void SaveImage(string name)
     {
         var previous = RenderTexture.active;
@@ -227,7 +292,9 @@ public static class OriginalLivePlaybackValidation
         if (result != null && result.exceptions > 0) { Finish(result.firstException); return; }
         if (result == null || provider == null) return;
         result.renderedFrames = preview.RenderCount;
-        result.ownerKeys = keys.Count;
+        result.ownerKeys = keys.Count + leftKeys.Count;
+        if (provider.ConsumerFaultCount > 0 || provider.Bridge.FaultCount > 0 || result.renderFailures > 0)
+        { Finish("Continuous provider, rendering or evidence observation failed"); return; }
         result.audioSources = director ? director.liveMusic.sourceList.Count : result.audioSources;
         if (director && director.liveMusic.sourceList.Count > 0)
         {
@@ -243,7 +310,9 @@ public static class OriginalLivePlaybackValidation
             bool pass = result.frames >= 100 && result.clockFailures == 0 && result.clockLinkFailures == 0 &&
                 result.selectionFailures == 0 && result.renderFailures == 0 && result.exceptions == 0 &&
                 result.modelCount > 0 && result.meshRenderers > 0 && result.nativePhysicsSkipped &&
-                result.naturalFadeInteriorFrames > 0 && result.disabledFrames > 0 && result.ownerKeys >= 3 &&
+                (result.channelCount == 1 ? result.naturalFadeInteriorFrames > 0 && result.ownerKeys >= 3 :
+                    result.bothEnabledFrames > 0 && result.bothRenderedFrames == result.bothEnabledFrames &&
+                    result.ownerKeys == result.expectedKeyStates && result.channelEvidenceCollected) && result.disabledFrames > 0 &&
                 preview.RenderCount > 100 && result.audioPlayingObserved && result.audioTime > 1 &&
                 provider.Bridge.FaultCount == 0 && provider.ConsumerFaultCount == 0 && result.lastOwnerTime >= result.timeLength &&
                 result.warmupLateOnlyFrames <= 1 && preview.RenderCount == result.validOwnerFrames;
@@ -264,25 +333,27 @@ public static class OriginalLivePlaybackValidation
         result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
         result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
         if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
-        preview?.Dispose(); provider?.Dispose();
+        channelEvidence?.Dispose(); preview?.Dispose(); provider?.Dispose();
         if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
         Save(); Application.logMessageReceived -= Log;
         EditorApplication.ExitPlaymode();
     }
     [Serializable] class Profile { public float fixedThickness, minimumThickness, angleDivisor, secondaryOrigin, secondaryScale, durationMultiplier; public float[] kindBases; }
     [Serializable] class Samples { public Sample[] rows; }
-    [Serializable] class Sample { public long serial; public int keyFrame; public float currentTime, comparisonTime, fade; public bool enabled; public string renderStatus; }
+    [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;
         public int preloadBundles, modelCount, meshRenderers, frames, validOwnerFrames, warmupLateOnlyFrames, selectionFailures, clockFailures, clockLinkFailures,
             backwardUpdates, keyTransitions, disabledFrames, unresolvedFadeFrames, naturalFadeInteriorFrames, renderFailures,
             renderedFrames, ownerKeys, audioSources, exceptions, providerFaults;
+        public int channelCount, rightTrack, leftTrack, expectedKeyStates, bothEnabledFrames, bothRenderedFrames, inactiveUnknownPreservedFrames;
         public long preloadBytes;
         public float timeLength, lastOwnerTime, audioTime;
         public double playbackWallSeconds;
         public string[] missingPreloads;
         public bool nativePhysicsSkipped, audioPlayingObserved, finalImage, middleImage, naturalExitObserved;
+        public bool channelEvidenceCollected;
         public bool OriginalVerified = false, runtime_contract = false, SourceToViewerClockContract = false;
         public string Phase257cause = "Unknown", textureMapping = "ExplicitFullViewportViewerPreview", clockSource = "NaturalViewerDirectorOwnerUpdates";
     }

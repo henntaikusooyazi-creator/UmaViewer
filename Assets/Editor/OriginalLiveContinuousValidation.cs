@@ -78,10 +78,10 @@ public static class OriginalLiveContinuousValidation
             }
             var target = Own(new RenderTexture(64, 32, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear));
             target.Create();
-            Color32[] Read()
+            Color32[] Read(RenderTexture from = null)
             {
                 var active = RenderTexture.active; var pixels = new Texture2D(64, 32, TextureFormat.RGBA32, false, true);
-                try { RenderTexture.active = target; pixels.ReadPixels(new Rect(0, 0, 64, 32), 0, 0); pixels.Apply(); return pixels.GetPixels32(); }
+                try { RenderTexture.active = from ? from : target; pixels.ReadPixels(new Rect(0, 0, 64, 32), 0, 0); pixels.Apply(); return pixels.GetPixels32(); }
                 finally { RenderTexture.active = active; Object.DestroyImmediate(pixels); }
             }
             bool supplyMapping = true; Camera selected = background;
@@ -144,14 +144,59 @@ public static class OriginalLiveContinuousValidation
             }
             Check(control.OriginalCompositeBridge == null && target.IsCreated(), "Disposal detaches only the owned registration and preserves caller output.");
             var both = new[] { binding[0], OriginalLiveTimelineRegistration.TrackBinding.FromTrack(1, sheet.multiCameraPosKeys[1]) };
+            for (int i = 0; i < 2; i++)
+            {
+                sheet.multiCameraPosKeys[i].keys.thisList[0].maskType = 0;
+                sheet.multiCameraPosKeys[i].keys.thisList[1].maskOffset = new Vector2(i == 0 ? -.25f : .25f, 0);
+            }
             using (var provider = new OriginalLiveContinuousProvider(control, profile, both, s =>
-                new OriginalLiveDrawInputResolver.Inputs(default, OriginalLiveContinuousRenderer.FullViewportMapping(32))))
+                new OriginalLiveDrawInputResolver.Inputs(new A.DrawState(null, null, new Vector2(s.TrackOrdinal == 0 ? .25f : -.25f, 0)),
+                    OriginalLiveContinuousRenderer.FullViewportMapping(32))))
             using (var preview = new OriginalLiveContinuousRenderer(provider, 0, 1, f => background,
                 Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target))
             {
                 control.AlterUpdate(.5f); control.AlterLateUpdate();
                 Check(provider.LastFrame.Selections.Count == 2 && preview.RenderCount == 1 && preview.LastException == null,
                     "Two explicitly bound artificial channels reach their sequential GPU submissions.");
+                var preserved = Read(); control.AlterUpdate(0); control.AlterLateUpdate();
+                Check(preview.RenderCount == 1 && preview.LastStatus == "UnresolvedDrawInputs" && Read().SequenceEqual(preserved),
+                    "Existing constructor still holds unknown kind-0 thickness on an inactive key.");
+                var optTarget = Own(new RenderTexture(64, 32, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)); optTarget.Create();
+                using (var opt = new OriginalLiveContinuousRenderer(provider, 0, 1, f => background,
+                    Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), optTarget, true))
+                {
+                    control.AlterUpdate(0); control.AlterLateUpdate();
+                    Check(opt.RenderCount == 1 && opt.LastTransparentChannels == 3 && (opt.LastUnresolved & A.Unresolved.EffectiveThickness) != 0 &&
+                        !provider.LastFrame.Selections[0].Snapshot.Draw.EffectiveThickness.HasValue,
+                        "Explicit inactive-zero policy renders transparently while preserving unknown thickness.");
+                    Check(Read(optTarget).All(x => x.Equals(new Color32(0, 255, 0, 255))), "Two transparent inactive channels reveal the exact base RGBA image.");
+                    var key = sheet.multiCameraPosKeys[0].keys.thisList[0]; key.enableMultiCamera = true;
+                    control.AlterUpdate(0); control.AlterLateUpdate();
+                    Check(opt.RenderCount == 1 && opt.LastStatus == "UnresolvedDrawInputs", "Unknown active kind-0 state is still rejected.");
+                    key.enableMultiCamera = false; key.LineType = (MultiCameraComposite.DivideLineType)1;
+                    control.AlterUpdate(0); control.AlterLateUpdate();
+                    Check(opt.RenderCount == 1 && (opt.LastUnresolved & A.Unresolved.OtherPassRequired) != 0, "Inactive zero does not bypass another pass.");
+                    key.LineType = 0; provider.Bridge.ClearConfirmedOwnerClock(); control.AlterUpdate(0); control.AlterLateUpdate();
+                    Check(opt.RenderCount == 1 && (opt.LastUnresolved & A.Unresolved.Fade) != 0, "Unknown fade never becomes an assumed transparent channel.");
+                    provider.Bridge.UseConfirmedOwnerClock(64); control.AlterUpdate(0); control.AlterLateUpdate();
+                    Check(opt.RenderCount == 2 && opt.LastException == null, "Known inactive-zero owner input resumes the explicit policy.");
+                    background.backgroundColor = new Color(0, 1, 0, 0);
+                    using (var evidence = new OriginalLiveChannelEvidence(opt, 0, 1, f => background))
+                    {
+                        control.AlterUpdate(1.5f); control.AlterLateUpdate();
+                        var e = evidence.Evidence;
+                        Check(e.complete && e.failure == null && opt.LastException == null, "Bounded evidence capture completes inside one real GPU submission.");
+                        Check(e.exactReplay && e.replayDifferentPixels == 0, "Saved same-frame channel inputs replay to every identical RGBA pixel.");
+                        Check(e.rightContributionPixels > 0 && e.leftContributionPixels > 0 && e.baseContributionPixels > 0,
+                            "Independent removal proves visible contributions from all three explicit camera roles.");
+                        Check(e.rightOnlyCoveragePixels > 0 && e.leftOnlyCoveragePixels > 0 && e.baseOnlyCoveragePixels > 0,
+                            "The two captured coverage maps leave three independently occupied regions.");
+                        Check(e.baseContributionPixels < e.width * e.height,
+                            "Destination-alpha changes are excluded from visible base contribution counts.");
+                        Check(e.stages.SequenceEqual(Enumerable.Range(0, 7)) && e.sameOwnerPair && e.distinctCameras,
+                            "Selection clocks, source camera references and ordered shared-input versions belong to one update.");
+                    }
+                }
             }
             var lifetime = new OriginalLiveContinuousProvider(control, profile, binding);
             var replacement = new OriginalLiveTimelineBridge(); control.OriginalCompositeBridge = replacement;

@@ -4,7 +4,17 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
-## 自然なkey・owner時刻の連続供給
+## 二channelの自然供給と3分割preview
+
+既存の連続providerへ、明示順序を持つ実楽曲の二channelを接続しました。有効keyの同時選択、同じowner時刻、異なるViewer camera参照を保持し、左右coverage→下地→最終合成を同一更新で観測します。公開人工入力は **338/338 PASS**、保存実測を含む結合検証は **1820/1820 PASS**（従来から追加26件）です。
+
+ローカル実楽曲を通常の終端・Viewer復帰まで自然再生し、二channelが同時有効な各更新を描画しました。同じ更新で保存した左右coverageと下地からの再合成は最終出力と全RGBA一致し、左右・下地それぞれのRGB寄与と三領域も確認しました。修正後の同じsourceで、従来の単一channel・正duration fadeを含む自然再生も終端・復帰まで再確認しました。原作の追加起動・ARM・採取は不要でした。
+
+追加のViewer preview policyは「無効key・解決済みfade 0・pass 0」のchannelを透明submissionにできます。kind 0の未知の厚さはsnapshotとLastUnresolvedに残し、有効key、fade未取得、別passには適用しません。既存constructorは従来の保留を維持します。[自然再生と同一更新の証拠](Tools/OriginalLiveRendering/INTEGRATION.md#二channelの自然再生と同一更新の証拠) を参照してください。
+
+完全replayは全RGBAで比較し、各cameraの可視寄与はRGBだけで判定します。destination alphaの差を可視寄与に含めません。原作TextureMapping・S生成camera帰属・時刻原点は引き続き未確定です。
+
+## 自然なkey・owner時刻の連続供給（前回）
 
 `OriginalLiveContinuousProvider` がロード済みControlの各更新を受け取り、選択済みkeyと同じowner時刻の組から既存resolverを呼びます。無効keyも通知し、owner時刻を1更新で使い切ることで、初回・late updateだけの再実行ではUnknownを保ちます。停止・seek、登録所有権、未取得時の画素保持、単一／二channelを含む追加64件により、公開人工入力は **312/312 PASS**、保存実測を含む結合試験は **1794/1794 PASS** です。
 

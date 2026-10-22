@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 二channelの自然再生と同一更新の証拠
+
+公開人工入力は **338/338 PASS**、保存した私有入力を含む試験は **1820/1820 PASS**。追加26件では、明示したinactive-zero policy、Unknownの保持、有効kind 0／別pass／未取得fadeの保留、同一更新のcamera・時刻・shared input version、全RGBA replay、三つのcameraのRGB寄与をBuilt-in／URP14で検証しました。alphaの異なる下地を使い、alpha差が可視寄与へ混ざらないことも確認しています。
+
+実楽曲の二channel検証は `Invoke-NaturalPlaybackValidation.ps1` へ明示した `-RightTrack` と `-LeftTrack` を追加します。既存の単一track引数はそのままです。役割と順序は呼出し側が指定し、camera名・画面の見た目・kindからcamera帰属を推測しません。実loaderで得た二つのauthored bindingから、同じowner更新のSelectionとcameraを利用します。
+
+同時有効になった区間から、1frameだけViewer所有の右coverage入力を左入力への更新前にコピーし、左coverage入力、下地、最終出力も同じselected serialで保存します。二つの入力は同じshared RTのversion 1／2として扱い、後から同じRTを2回読んで済ませません。camera参照がそれぞれのSelectionと一致し、下地resolverとも一致することを検査します。
+
+保存した同一frameの入力を再合成し、最終出力の全RGBA一致を要求します。さらに右、左、下地を一つずつ除いた場合のRGB差と、各coverageが単独で占める領域・下地だけの領域を調べ、三つの可視寄与を個別に確認します。RGBA replayとRGB寄与は別の判定です。
+
+Unity f3／D3D11の実楽曲で、自然終端・Viewer復帰までこの二channel経路を確認しました。全authored keyの選択を観測し、初回late-onlyを除くowner更新をすべて描画、同時有効な各更新もすべて左右を描画しました。上記の同一frame replay・三camera参照・共通owner pair・RGB寄与・三領域の受入も成立しました。この楽曲の有効keyはduration 0であるため、正duration fadeを二channel受入の条件にはしていません。同じ最終sourceで、従来の単一channel楽曲は正durationのfade中間値を含め自然終端・復帰まで回帰PASSです。両再生ともowner値欠落・前後結合不一致・provider fault・描画fault・実行時例外は0でした。
+
+この受入はViewer生成RTのfull-viewport policyとnative clothなしの明示previewです。原作側のmapping、S生成cameraの正式帰属、cast、時刻原点、音声epoch、原作3分割の最終画素一致へ拡張しません。raw画像・時刻・key値・receiptは公開しません。各false／Unknownと過去のPending記録も維持します。
+
 ## 自然な連続供給とViewer再生
 
 公開人工入力は **312/312 PASS**、確認済みprofile・保存owner clock・保存cue・保存fadeを明示する試験は **1794/1794 PASS** です。前回から追加した64件は、初回late-only、owner値の使い切り、無効key通知、pause／seek、所有権、consumer例外分離、mapping／camera不足時の全RGBA保持、単一／二channelのGPU接続、物理初期化の明示opt-outを含みます。Built-in／URP14の各32件で、private値を必要としません。

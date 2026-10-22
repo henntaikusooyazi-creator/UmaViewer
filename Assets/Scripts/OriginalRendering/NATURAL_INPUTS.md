@@ -2,6 +2,16 @@
 
 # 自然なtimeline更新と描画入力の接続
 
+## 二channelの順序と無効区間
+
+再生検証wrapperの `-RightTrack <明示ordinal> -LeftTrack <別ordinal>` で二channelを指定できます。各bindingは実trackのauthored Composite番号から作り、ordinalから番号を推測しません。引数を省略した単一track経路は保持します。同時有効区間の有無と全keyの状態は、ロードした実timelineを基に確認します。
+
+`OriginalLiveContinuousRenderer` の追加overloadの最後へ `transparentInactiveChannels: true` を渡すと、無効key、解決済みfadeが厳密に0、wire pass 0の組だけを透明submissionにします。必要ないcoverageを生成せず、未知の厚さを仮定値へ置き換えません。SnapshotとLastUnresolvedにはUnknownを残し、`LastTransparentChannels` が省略したchannelを示します。既存overloadはfalseです。
+
+同時有効時は、両Selectionのowner値、camera、coverageが必要です。片側が未解決なら出力を保持する従来の規則を保ちます。kind 0の動的receiver状態、別pass、原作の未知mappingをこのpolicyで解決したことにはしません。
+
+`TraceEmitted` はViewer所有RTへの任意の観測点です。実際の右入力更新→右mask→左入力更新→左mask→下地→最終合成と、同じFrame・camera参照を受け取れます。source cameraや原作プロセスにhookを追加せず、observerなしの既存呼出しも保持します。公開Editor検証器は1frameに限定してGPU入力をコピーし、全RGBA replayとRGB寄与、左右／下地それぞれのcoverage領域を確認します。画像・owner値・instance IDは外部のprivate結果先だけへ保存します。
+
 ## 連続供給の明示登録
 
 `OriginalLiveContinuousProvider` は、ロード済みControl、確認済みprofile、authored trackと一致する明示bindingを受け取ります。Controlの実 `AlterUpdate`／`AlterLateUpdate` をそのまま利用し、保存した時刻配列やViewerFrameからの推測時刻は供給しません。providerの `FrameReady` には同じ更新のimmutableなSelectionと解決済みSnapshotが届きます。

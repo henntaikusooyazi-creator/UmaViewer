@@ -36,6 +36,10 @@
 
 ## 明示利用時の制約
 
+- 二channelの実楽曲previewには左右のtrack ordinalを明示します。無効・fade 0・pass 0を透明扱いする追加overloadはViewer preview policyであり、kind 0のUnknownを解消しません。既存overloadの保留動作は維持します。
+- 可視寄与はRGB差で検証します。最終shaderが保持するdestination alphaの差だけを、下地cameraの可視寄与へ数えません。全RGBA replay、camera参照、同じowner更新、coverage領域は別々に確認します。
+- `TraceEmitted` は明示観測です。observerが失敗すればRenderFailedとして残り、全描画成功へ昇格しません。観測はViewer所有RTだけで、原作GPUへのhookやcamera正式帰属の証明ではありません。
+
 - **BREAKING RISK（新しい明示経路のみ）:** 連続previewは追加camera描画の負荷を増やします。物理opt-outではclothの初期化とsimulationを省くため、髪・衣装の物理表現は失われます。従来の2引数 `LoadLive` は物理初期化を維持し、新providerやpreviewを自動登録しません。
 - bridge利用時は無効keyも通知するため、従来「無効key＝通知なし」に依存した独自subscriberには影響します。無効状態はそのまま保持し、通常cameraのenableや更新を変更しません。owner未更新のlate-only frameでは、前回時刻を使わず描画を保留します。
 - full-viewport previewは対応しないsource viewportを保持状態へ戻します。source cameraのscript・post effect・stackを複製しない既存camera producerの制約も残ります。原作TextureMappingへ一般化しません。
