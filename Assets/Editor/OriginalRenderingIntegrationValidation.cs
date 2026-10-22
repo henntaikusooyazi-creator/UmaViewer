@@ -15,7 +15,8 @@ using UnityEngine.SceneManagement;
 using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
 using M = Gallop.Live.Rendering.OriginalCompositeProducerMath;
 
-// Opt-in batch acceptance with artificial typed keys and generated geometry.
+// Opt-in batch acceptance with artificial geometry and default typed fixtures.
+// Optional caller-supplied cue inputs stay separate from natural song playback.
 // Uses the Fork's real Control/Director in a transient scene; no saved scene or game asset is changed.
 public static class OriginalRenderingIntegrationValidation
 {
@@ -29,6 +30,8 @@ public static class OriginalRenderingIntegrationValidation
         public int ownerClockChecks, ownerClockRows;
         public string ownerClockSource;
         public string confirmedProfileSource;
+        public int naturalCueChecks, naturalCueRows, naturalCueKeys, naturalCuePositiveDurationKeys;
+        public string naturalCueSource = "NotProvided";
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
         public bool TestOnly = true, OriginalVerified = false, runtime_contract = false;
@@ -64,6 +67,23 @@ public static class OriginalRenderingIntegrationValidation
         public OwnerClockSample[] samples;
     }
     static OwnerClockData ownerClockData;
+    [Serializable] sealed class NaturalCueTrack
+    {
+        public int ordinal, compositeIndex;
+        public LiveTimelineKeyMultiCameraPositionData[] keys;
+    }
+    [Serializable] sealed class NaturalCueSample
+    {
+        public int frame, compositeIndex, pass, fadeBits, angleZBits, angleWBits;
+        public int[] rawBits;
+    }
+    [Serializable] sealed class NaturalCueData
+    {
+        public NaturalCueTrack[] tracks;
+        public NaturalCueSample[] samples;
+        public int gpuFrame;
+    }
+    static NaturalCueData naturalCueData;
     static float FromBits(int bits) => BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
     static int FloatBits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
@@ -162,8 +182,29 @@ public static class OriginalRenderingIntegrationValidation
             }
             if (ownerClockData?.samples == null || ownerClockData.samples.Length < 1 || ownerClockData.samples.Length > 128)
                 throw new InvalidOperationException("One to 128 explicit owner-clock samples required.");
+            int naturalArg = Array.IndexOf(args, "-confirmedNaturalCue");
+            if (naturalArg >= 0)
+            {
+                string path = args[naturalArg + 1];
+                if (new FileInfo(path).Length > 262144) throw new InvalidOperationException("Bounded natural cue input required.");
+                naturalCueData = JsonUtility.FromJson<NaturalCueData>(File.ReadAllText(path));
+                if (profileArg < 0 || naturalCueData?.tracks == null || naturalCueData.tracks.Length != 2 ||
+                    naturalCueData.tracks.Any(t => t == null || t.keys == null || t.keys.Length < 1 || t.keys.Length > 64 ||
+                        t.keys.Any(k => k == null || (k.interpolateType == LiveCameraInterpolateType.Curve &&
+                            (k.curve == null || k.curve.length == 0)))) ||
+                    !naturalCueData.tracks.Select(t => t.ordinal).OrderBy(x => x).SequenceEqual(new[] { 0, 1 }) ||
+                    !naturalCueData.tracks.Select(t => t.compositeIndex).OrderBy(x => x).SequenceEqual(new[] { 0, 1 }) ||
+                    naturalCueData.samples == null || naturalCueData.samples.Length < 2 || naturalCueData.samples.Length > 256 ||
+                    naturalCueData.samples.Any(s => s == null || s.rawBits == null || s.rawBits.Length != 8))
+                    throw new InvalidOperationException("Two explicitly bound tracks with nonempty authored curves, bounded samples and a confirmed profile required.");
+                result.naturalCueSource = "ExplicitLocalTypedKeysAndObservations";
+                result.naturalCueRows = naturalCueData.samples.Length;
+                result.naturalCueKeys = naturalCueData.tracks.Sum(t => t.keys.Length);
+                result.naturalCuePositiveDurationKeys = naturalCueData.tracks.Sum(t => t.keys.Count(k =>
+                    k.enableMultiCamera && M.ResolveDurationCount(k.fadeTime, confirmedProfile.DurationMultiplier) > 0));
+            }
             ExerciseConfirmedMath(); ExerciseOwnerClockMath(); ExerciseThicknessMath(); Exercise(false); Exercise(true);
-            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks;
+            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks - result.naturalCueChecks;
             result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
@@ -270,6 +311,7 @@ public static class OriginalRenderingIntegrationValidation
             ExerciseDrawProvider(control, sheet, urp);
             ExerciseConfirmedProvider(control, sheet, urp);
             ExerciseOwnerClockProvider(control, sheet, urp);
+            if (naturalCueData != null) ExerciseNaturalCueAngles(control, sheet, urp);
         }
         finally
         {
@@ -281,6 +323,81 @@ public static class OriginalRenderingIntegrationValidation
             Check(before == Resources.FindObjectsOfTypeAll<RenderTexture>().Count(r => r.name.StartsWith("Original.")) && !Resources.FindObjectsOfTypeAll<Camera>().Any(c => c.name == "Original.ExplicitCamera"), "Owned camera/RT cleanup: " + urp);
         }
     }
+    static void ExerciseNaturalCueAngles(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int start = result.checks;
+        try
+        {
+            var samples = naturalCueData.samples.ToDictionary(s => (s.frame, s.compositeIndex));
+            var frames = naturalCueData.samples.Select(s => s.frame).Distinct().OrderBy(f => f).ToArray();
+            Check(frames.All(f => samples.ContainsKey((f, 0)) && samples.ContainsKey((f, 1))) &&
+                samples.ContainsKey((naturalCueData.gpuFrame, 0)), "Every observed frame has both explicit composite bindings.");
+            foreach (var track in naturalCueData.tracks)
+            {
+                var target = sheet.multiCameraPosKeys[track.ordinal];
+                target.MultiCameraNo = track.compositeIndex;
+                target.keys.thisList = track.keys.ToList();
+            }
+            // Flat source colors and geometry remain artificial; only typed cue
+            // inputs and independent receiver observations come from the caller.
+            var sources = new[] { Multi(8), Multi(9) };
+            sources[0].GetCamera().backgroundColor = new Color32(220, 30, 40, 255);
+            sources[1].GetCamera().backgroundColor = new Color32(30, 40, 220, 255);
+            foreach (var source in sources) source.GetCamera().cullingMask = 0;
+            control.SetMultiCamera(sources);
+            var baseCamera = Configure(Go("Synthetic natural cue base").AddComponent<Camera>(), 10);
+            baseCamera.cullingMask = 0; baseCamera.backgroundColor = new Color32(20, 180, 40, 255);
+            bool render = false, reference = false;
+            int frame = 0;
+            var resolved = new Dictionary<int, A.Snapshot>();
+            var resolver = new OriginalLiveDrawInputResolver(selection =>
+            {
+                if (!render) return new OriginalLiveDrawInputResolver.Inputs(default, null).WithConfirmedProfile(confirmedProfile);
+                var sample = samples[(frame, selection.Cue.Source.CompositeIndex.Value)];
+                var draw = new A.DrawState(FromBits(sample.fadeBits), null,
+                    reference ? (Vector2?)new Vector2(FromBits(sample.angleZBits), FromBits(sample.angleWBits)) : null);
+                return new OriginalLiveDrawInputResolver.Inputs(draw, new A.TextureMapping(Identity, 1, Identity, 0))
+                    .WithConfirmedProfile(confirmedProfile);
+            });
+            var output = Target(64, 32);
+            using (var registration = new OriginalLiveTimelineRegistration(control, 0, 1, _ => baseCamera,
+                Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output,
+                s => { var value = resolver.Resolve(s); resolved[s.Cue.Source.CompositeIndex.Value] = value; return value; }))
+            {
+                void CueTick(int value)
+                { frame = value; Field("_currentFrame").SetValue(control, (float)value); control.AlterLateUpdate(); }
+                foreach (int value in frames)
+                {
+                    resolved.Clear(); CueTick(value);
+                    Check(resolved.Count == 2 && registration.Bridge.FaultCount == 0,
+                        "Real Control selects both supplied natural cue tracks.");
+                    foreach (int j in new[] { 0, 1 })
+                    {
+                        var actual = resolved[j]; var sample = samples[(value, j)]; var cue = actual.Values;
+                        var color = cue.LineColor.Value; var offset = cue.Offset.Value;
+                        var raw = new[] { cue.Thickness.Value, color.r, color.g, color.b, color.a,
+                            cue.LineAntialiasing.Value, offset.x, offset.y };
+                        Check(raw.Select(FloatBits).SequenceEqual(sample.rawBits) && actual.WirePass == sample.pass,
+                            "Selected raw cue components and pass match the independent saved receiver.");
+                        Check(actual.Draw.ShaderAngles.HasValue && FloatBits(actual.Draw.ShaderAngles.Value.x) == sample.angleZBits &&
+                            FloatBits(actual.Draw.ShaderAngles.Value.y) == sample.angleWBits,
+                            "Selected natural cue -> confirmed producer -> shader angles matches both receiver components bit for bit.");
+                        Check(!actual.Draw.Fade.HasValue && !actual.Texture.HasValue && !registration.Bridge.LastFrame.Selections[j].ComparisonClock.HasValue,
+                            "Observed cue F does not synthesize owner time, fade or TextureMapping.");
+                    }
+                }
+                Check(registration.Session.RenderCount == 0, "Missing natural clock and mapping preserve the GPU output.");
+                render = true; CueTick(naturalCueData.gpuFrame); var actualPixels = Read(output);
+                Check(registration.Session.RenderCount == 1 && registration.Session.LastException == null &&
+                    actualPixels.Distinct().Count() > 1, "Real cue angles reach a nonuniform synthetic GPU image: " + urp);
+                reference = true; CueTick(naturalCueData.gpuFrame);
+                Check(registration.Session.RenderCount == 2 && Read(output).SequenceEqual(actualPixels),
+                    "Producer angles and independent receiver angles match at every GPU RGBA pixel: " + urp);
+            }
+        }
+        finally { result.naturalCueChecks += result.checks - start; }
+    }
+
     static void ExerciseOwnerClockMath()
     {
         int start = result.checks;

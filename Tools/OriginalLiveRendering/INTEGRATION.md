@@ -58,3 +58,13 @@ wrapperはProjectSettingsに加え、隔離DLLに付属する既存metadataも�
 実 `AlterUpdate` → owner比較値snapshot → 同じSelection → resolver → coverage → compositorを実行し、Built-in／URP14の各64×32全RGBAが独立した評価済みfadeの経路と一致しました。clockのopt-in直後、片方だけの明示整数、解除後は出力を保持します。明示した整数の組と既存評価値の優先も確認しました。
 
 GPU試験のgeometry・key・TextureMappingは人工入力です。原作の保存比較に含まれた無効keyの終点値を、自然なfade遷移の検証へ広げません。時刻原点・音声epoch・最終画面frameとの対応、自然楽曲の通し受入は未成立です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false` を維持します。
+
+## 保存した実楽曲cueからの角度生成
+
+任意引数 `-ConfirmedNaturalCue <公開repo外の明示JSON>` を追加しました。選択・補間に必要な実楽曲のtyped cue、authored curve、明示k/jと、独立して保存したreceiver値を渡し、実Controlの選択結果からprofileでshader角度を生成します。入力は2track・各64key以下・256観測以下・256KiB以下に限定し、この検証ではcurve補間の曲線を必須・非空とします。原作値や楽曲データは公開repoへ含めません。
+
+今回の外部入力では **1524/1524 PASS**。従来228件と追加1296件を含みます。保存184観測のraw 8成分・passを再照合し、生成角度の2成分も全件でreceiverのfloat32 bitに一致しました。Built-in／URP14では、生成角度と独立した実測角度の経路が各64×32全RGBAで一致し、画像が単色だけでないことも確認しました。cameraのgeometry設定、描画元の色、TextureMappingは人工入力です。fadeはGPU比較時だけ保存された評価済み値を明示し、owner時刻を別runから結合していません。
+
+保存された自然cueのFだけではowner比較値・fade・TextureMappingを生成せず、未指定時の描画保留を確認しています。対象の保存key一覧には正のdurationCountを持つ有効keyがなく、自然な時間遷移をこの楽曲データから証明できません。追加runは行わず、次の採取には、別途確認した自然keyの有効値・正のdurationCount・選択ownerとの対応が必要です。
+
+角度の観測元runの元Pending判定は変更しません。保存された限定観測の値との比較であり、同runの停止成功、通常ライブの自然再生、最終画素の原作一致を示すものではありません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。

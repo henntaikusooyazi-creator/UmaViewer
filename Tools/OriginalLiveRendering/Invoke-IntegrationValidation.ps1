@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string] $UnityExecutable,
     [Parameter(Mandatory)][string] $OutputPath,
     [string] $ConfirmedProducerProfile,
-    [string] $ConfirmedOwnerClock
+    [string] $ConfirmedOwnerClock,
+    [string] $ConfirmedNaturalCue
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -32,6 +33,10 @@ try {
     if ($ConfirmedOwnerClock) {
         $clock = (Resolve-Path -LiteralPath $ConfirmedOwnerClock).Path
         $arguments += @('-confirmedOwnerClock', ('"' + $clock + '"'))
+    }
+    if ($ConfirmedNaturalCue) {
+        $cue = (Resolve-Path -LiteralPath $ConfirmedNaturalCue).Path
+        $arguments += @('-confirmedNaturalCue', ('"' + $cue + '"'))
     }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()

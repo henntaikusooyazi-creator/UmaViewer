@@ -29,6 +29,7 @@
 - PS1の境界線色、全楽曲・全frame・全解像度での再現：未完了。
 - 元Viewer f1の通常ライブ受入と、通常ライブへの自動切替：未実施。自動切替は今回の対象外です。
 - owner比較入力の228チェックは人工geometry・typed keyによる実Control→GPU受入です。原作setterとの保存比較は無効keyの終点値を含む限定区間であり、自然なfade遷移の受入へ広げません。`SourceToViewerClockContract=false`。
+- 後続の1524チェックでは保存した実楽曲cueからの角度生成を確認しましたが、対象の保存keyには正のdurationCountを持つ有効keyがありません。同じ区間の採取反復だけでは自然fade遷移を証明できず、別途確認した自然key条件とowner対応が次の採取条件です。TextureMappingの自然供給も未確定です。
 - 過去の原作F採取runの停止判定：`PendingManualRecovery`。今回の公開準備で過去の判定を書き換えません。
 
 ## 明示利用時の制約
@@ -43,6 +44,6 @@
 
 - 確認時点の本家rootにはLICENSEファイルがなく、GitHubのlicense判定もありません。third-partyの個別LICENSEとは区別し、本家へのPR前に追加ソースのライセンス方針をmaintainerと確認する必要があります。本ブランチで本家へ新しいライセンスを付与しません。
 - 公開対象は自作C#、shader、人工入力テスト、設計文書、検証概要です。原作DLL、非公開asset、DXBC、逆アセンブル、hook、raw capture、private receipt、認証情報、個人パスは含めません。
-- private入力を必要とする実楽曲・原作照合テストは移植対象外です。公開人工テストの成功を原作実測の再検証へ格上げしません。
+- privateな実楽曲・原作照合の入力データは移植対象外です。明示的な外部入力を受ける検証器は公開できますが、公開人工テストの成功を原作実測の再検証へ格上げしません。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown` を維持します。

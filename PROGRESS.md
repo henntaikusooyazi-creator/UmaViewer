@@ -4,6 +4,12 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 実楽曲cueの角度生成と自然fade条件
+
+保存した実楽曲のtyped cueとauthored curveを実Controlへ渡し、確認済みprofileから生成したshader角度を独立したreceiverの保存値と照合しました。184観測の角度2成分がすべてbit一致し、Built-in／URP14の人工GPU画像も全RGBAで一致しました。従来228件を含む **1524/1524 PASS** です。[入力・検証・制約](Tools/OriginalLiveRendering/INTEGRATION.md#保存した実楽曲cueからの角度生成) を参照してください。
+
+対象の保存keyには正のdurationCountを持つ有効keyがなく、自然fade遷移は未証明です。今回の追加原作runはありません。観測元の元Pending判定を維持し、別runのowner時刻と結合していません。camera geometry・描画色・TextureMappingは人工入力で、通常ライブの通し再生を示すものではありません。
+
 ## owner比較入力の接続
 
 ownerの現在時刻と比較時刻に対する保存済みproducer演算を確認し、明示opt-in時の実 `AlterUpdate` から既存resolverへ接続しました。実採取したowner入力を外部から与える検証は **228/228 PASS**。従来175件と追加53件を含み、Built-in／URP14で人工geometry・typed keyからの全RGBA一致を確認しています。[接続と受入範囲](Tools/OriginalLiveRendering/INTEGRATION.md#owner比較値の接続受入) を参照してください。
