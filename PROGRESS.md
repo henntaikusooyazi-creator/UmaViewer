@@ -1,8 +1,14 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-22。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-23。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## owner比較入力の接続
+
+ownerの現在時刻と比較時刻に対する保存済みproducer演算を確認し、明示opt-in時の実 `AlterUpdate` から既存resolverへ接続しました。実採取したowner入力を外部から与える検証は **228/228 PASS**。従来175件と追加53件を含み、Built-in／URP14で人工geometry・typed keyからの全RGBA一致を確認しています。[接続と受入範囲](Tools/OriginalLiveRendering/INTEGRATION.md#owner比較値の接続受入) を参照してください。
+
+通常ライブの自動採用、原作とViewerの時刻原点・音声epoch・最終画面frameの結合は未確定です。採取・検証器の失敗は保存証拠の再照合と区別し、元のPending判定を書き換えていません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false` を維持します。
 
 ## ブランチと本家
 
@@ -142,3 +148,11 @@ Unity 2022.3.62f3／D3D11で **152/152 PASS**。従来94件を再実行し、厚
 `b456e57` 後の文書限定調査です。[定数の根拠と不足範囲](Tools/OriginalLiveRendering/THICKNESS_CONSTANT_EVIDENCE.md) を記録しました。参照命令から2個のfloat32を特定し、関連する保存記録10件を照合しましたが、確認範囲には対象値のbytesが収録されていません。有効thicknessの観測結果だけから固定値／下限値を一意に決めることもできません。
 
 実値はUnknownのまま、既存の明示入力と152/152の過去受入を保持します。次に不足する値自体は各4bytes、合計8bytesです。実装、試験、原作run、開始条件、配備には変更がありません。今回の確認を新しいGPU受入や自然provider完成として扱いません。
+
+## 取得した未確定producer依存の接続
+
+固定厚さ・下限、回転定数、kind別base、duration倍率とfloor helperの参照先を限定実機採取で解決し、既存producer math／resolverへ接続しました。値・private captureは公開コードに埋め込まず、immutableな `ConfirmedProfile` を明示供給します。current keyのfade入力をSelectionから運び、既存評価値の優先と未取得clock等のUnknownを保ちます。
+
+実値profileによる実Control→GPU結合は **175/175 PASS**。従来152＋追加23で、Built-in／URP14の全RGBAが従来の評価済み入力経路と一致しました。原作側も限定採取の正常停止・通常終了・復元を確認しています。過去のPending判定は変更しません。
+
+これは従来の明示登録経路へproducerを接続した成果です。通常ライブの自動置換、自然楽曲通し、native物理、kind 0の動的receiver状態、Viewer型にないsecondary source、TextureMappingの自然供給、S生成cameraの帰属、全frame一致は別の残件です。`OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown` を維持します。

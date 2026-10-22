@@ -41,3 +41,9 @@
 文書差分と変更範囲のみを検証します。C#、shader、Director、Control、scene、ProjectSettings、Packages、研究Viewer、過去runの証拠を変更していないため、build／GPU／過去受入の再実行は行いません。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`、過去の `PendingManualRecovery` を維持します。
+
+## 後続の限定実機採取
+
+上記のStaticOnly時点より後に、版・ownerを照合した実機で対象値とhelper参照先を限定取得しました。全対象で前後2epochの読取成功・bytes一致を確認し、固定値／下限を有効thicknessから逆算せずに解決しました。停止・通常終了・所有接続の復元も確認しています。原作の値やraw証拠はprivateに保持します。
+
+取得した依存は `ConfirmedProfile` から既存resolverへ接続しました。冒頭のUnknownは過去の保存資料調査時点の結論であり、現在の未取得状態を示すものではありません。kind 0の動的receiver分岐は別の未確定事項として維持します。

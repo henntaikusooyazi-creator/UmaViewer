@@ -2,7 +2,7 @@
 
 # 自然なtimeline更新と描画入力の接続
 
-`OriginalLiveDrawInputResolver` は、既存 `OriginalLiveTimelineRegistration` / `OriginalLiveRenderSession` のresolve delegateへ渡す追加機能です。Control、bridge、camera、描画先、通常ライブの登録処理は変更しません。
+`OriginalLiveDrawInputResolver` は、既存 `OriginalLiveTimelineRegistration` / `OriginalLiveRenderSession` のresolve delegateへ渡す追加機能です。Controlの選択順、camera、描画先、通常ライブの登録処理を維持し、明示登録時にowner更新の2値を観測できます。
 
 ## 入力を供給する場所
 
@@ -13,6 +13,7 @@
 |使用ratio|Controlが実際に使ったratioを保持したCue|補間helperやlerpを再実行しない|
 |thickness、色、AA、offset、rotation source、kind、raw pass|選択／補間済みのCue.Values|書き換えない|
 |現在のViewer frame|Selection.ViewerFrame|metadataとして呼出し側へ渡す|
+|owner時刻から解決した比較整数2値|明示opt-in後のSelection.ComparisonClock|同じowner更新で取得した組だけを利用する|
 |更新識別子／key token|Selection.Serial / Cue.Source|保持。原作frameや時刻へ換算しない|
 |選択camera|Selection.ViewerCamera|そのままproviderへ渡す。cameraを検索・変更しない|
 |評価済みfade・有効thickness・shader角度|明示的なInputs.EvaluatedDraw|確認済みの値だけ供給する|
@@ -21,7 +22,7 @@
 |duration解決後のfade計算結果|明示的なInputs.ResolvedFade|時間換算を済ませた結果だけ供給する|
 |有効thicknessの分岐依存|5引数constructorのInputs.Thickness|明示した固定値／下限と、確認済みkind分岐または明示receiver分岐を使う|
 
-rawの有効フラグとfadeTimeはViewerのkey型／Control内にありますが、現在のSelectionはその値を運びません。未解決の時間helperを埋めるためにkeyを再検索したり、反射で抜き取ったりしません。現時点の接続には評価済みfadeを利用できます。
+選択済みcurrent keyの有効フラグとfadeTimeは、Selectionの `KeyEnabled` / `RawFadeDuration` に保持します。keyの再検索や反射による抽出は行いません。評価済みfadeを供給する既存経路も保持します。
 
 Viewer frame、bridge更新serial、原作のcue比較値F、観測Unity frame、QPC、録画時刻は別の情報です。resolverは相互の変換を行いません。
 
@@ -84,3 +85,23 @@ CLIで、実Viewerのmanaged bridgeのBeginFrame→CaptureSelected→FrameReady�
 復旧後の確認点は、明示登録した楽曲の自然なControl更新がこのdelegateへ届くこと、指定したcamera・描画先を使うこと、描画結果です。未解決helperやS生成cameraを解明するための新runを、この接続の前提条件にはしていません。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`。
+
+## 確認済みproducer依存の接続（2026-10-22）
+
+版を照合した限定採取で、固定厚さ・下限・回転定数、kind別base、duration倍率とfloor helperの分岐を確認しました。私有の値・captureは公開ソースへ埋め込まず、呼出し側がimmutableな `OriginalCompositeProducerMath.ConfirmedProfile` を構築します。
+
+既存providerの戻り値に `WithConfirmedProfile(profile, confirmedCueComparisonFrame, confirmedOwnerComparisonFrame, confirmedUseCueThickness)` を適用すると、そのSelectionの選択済みcueから有効thicknessとshader角度を生成します。fadeには同じcurrent keyから保持した `KeyEnabled`、`RawFadeDuration`、`CurrentKeyFrame` を使用します。next keyを再検索・再補間しません。
+
+比較frameを両方明示した場合、または以下のowner更新から比較値の組が取得できた場合に、raw duration → float32倍率積 → double floor → int32 → fadeの既存算術へ進みます。倍率は取得した依存であり、Viewer FPSから生成しません。比較値が未取得の場合も厚さ・角度は独立して解決し、fadeを推測しません。
+
+## owner更新からの比較値供給
+
+`registration.Bridge.UseConfirmedOwnerClock(confirmedOwnerTimeMultiplier)` を明示した後、次の実 `LiveTimelineControl.AlterUpdate` が現在のowner時刻と更新前のowner時刻をbridgeへ渡します。確認済みのfloat32積・floor・整数変換で2値を生成し、その後に選択されたkeyと同じimmutableなSelectionへ保持します。`ViewerFrame`、Unity frame、serialを比較値へ変換しません。
+
+providerが `WithConfirmedProfile(profile)` を返し、比較整数を両方とも省略した場合に、このSelectionの組を利用します。明示整数が片方だけなら組を混ぜず、fadeを未解決のまま保ちます。両方の明示整数、評価済みDrawState、明示ResolvedFadeの既存優先は保持します。
+
+opt-in直後でowner更新がまだない場合と、`ClearConfirmedOwnerClock()` 後は比較値がありません。未取得時は出力を保持します。通常ライブへの自動登録や、音声時計・原作とViewerの時刻原点、seek/pauseの対応をこの経路から確定しません。`SourceToViewerClockContract=false` を維持します。
+
+既存snapshot、providerの評価済み値、明示済み算術依存の優先を保ちます。profileなしのconstructorは従来どおりです。kind 0の未取得receiver状態、Viewer型にないsecondary source、TextureMapping、camera帰属はprofileで補完しません。通常ライブへの自動登録も追加しません。
+
+実値profileを外部入力として実Control → resolver → coverage → GPUまで検証します。これは人工geometry・typed keyによる結合試験であり、自然楽曲の通し受入ではありません。最新件数はPROGRESSとINTEGRATIONに記載します。

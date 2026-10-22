@@ -16,7 +16,7 @@
 
 既存resolverの5引数 `Inputs` に `ThicknessInputs` を指定したときだけ、この計算が接続されます。元snapshotの評価済みthickness、providerの評価済みthickness、今回の計算の順に優先します。既存constructorと未指定時の動作は保持しています。
 
-これは保存された分岐の純粋計算です。原作の実行時定数やkind 0の状態を新たに取得した結果ではなく、自然provider全体の完成でもありません。
+これは保存された分岐の純粋計算です。後続の限定採取で得た定数は末尾のConfirmedProfile経路から明示供給します。kind 0の動的状態と自然provider全体の供給は別の未確定点です。
 
 ## 角度
 
@@ -60,6 +60,22 @@ var next = OriginalCompositeProducerMath.ApplyToSnapshot(snapshot, angleInputs, 
 
 CLI上の純粋計算として、分岐境界、整数wrap、float演算順、未取得依存、評価済み値の優先、snapshot保持を確認しています。保存済みsetterとの比較と、評価済みreceiver入力の保持も確認しています。
 
-時間換算helper、kind別helperと定数を完全移植したという意味ではありません。新機能のUnity GPU受入、元Viewerでの自然ライブ、S生成cameraの帰属、他楽曲の自然再生は今回の確認対象外です。過去のGPU成功判定と採取結果は維持します。
+後続のConfirmedProfile接続とowner比較値の供給は、実Controlを通すUnity GPU試験でも確認しています。確認したhelper・定数の範囲と、元Viewerでの自然ライブ、S生成cameraの帰属、他楽曲の自然再生は区別します。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`。
+
+## 取得したhelper依存の利用
+
+`ConfirmedProfile` は固定厚さ・下限・回転3定数・duration倍率と、11項目のkind別baseを明示入力として保持します。tableはコピーして保持し、呼出し側の配列変更を反映しません。保存helperのunsigned範囲検査に従い、範囲外kindのbaseはゼロ、kind未指定はUnknownです。
+
+`ResolveDurationCount` は保存されたMULSS、拡大、floor、CVTTSD2SIの順を実装します。NaN・範囲外はx64のindefinite integerを保持します。倍率からFPSを推定せず、durationの単位やclockの対応は呼出し側の明示依存のままです。
+
+Unity/Monoはfloat局所変数を高精度のまま保持する場合があるため、保存scalar命令に対応する演算段階で実際の32bit保存を行います。倍率積と下降fadeの境界ケースを検証に保持し、epsilon補正や角度・UVの合わせ込みは行いません。`System.Math.Floor` は同名のViewer型との衝突を避けて完全修飾しています。
+
+既存評価値の優先と、未取得入力をUnknownとして保持する契約は変更しません。S生成camera、自然clockの対応、kind 0のreceiver状態、全画素一致全体をこのprofileだけで確定しません。
+
+## owner比較値の純粋計算
+
+`ResolveOwnerComparisonFrames(currentOwnerTime, comparisonOwnerTime, confirmedMultiplier)` は、独立して渡された2つのowner時刻へ、保存されたfloat32積→double floor→int32変換を適用します。比較側を内部の前回値やframe counterから生成せず、逆向きseek、同じ時刻、負の値にも新しい補正を加えません。
+
+実owner更新の保存命令と実採取値を照合し、同じ依存を使う明示bridge経路を追加しました。採取したsetter比較は無効keyの終点値であり、自然なfade遷移全体の実測ではありません。非ゼロfadeの接続は人工keyを使う実Control→GPU試験で検証し、音声原点や自然楽曲全体のclock契約は未確定のままです。

@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory)][string] $UnityExecutable,
-    [Parameter(Mandatory)][string] $OutputPath
+    [Parameter(Mandatory)][string] $OutputPath,
+    [string] $ConfirmedProducerProfile,
+    [string] $ConfirmedOwnerClock
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -13,7 +15,8 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 # API references were restored. Retain the exact pre-test bytes, including any
 # existing local edits; restore only after the dedicated Editor has exited.
 $saved = @{}
-foreach ($relative in @('ProjectSettings/GraphicsSettings.asset', 'ProjectSettings/QualitySettings.asset', 'ProjectSettings/ShaderGraphSettings.asset')) {
+foreach ($relative in @('ProjectSettings/GraphicsSettings.asset', 'ProjectSettings/QualitySettings.asset', 'ProjectSettings/ShaderGraphSettings.asset',
+        'Assets/Plugins/CySpringPlugin.dll.meta')) {
     $path = Join-Path $repo $relative
     if (Test-Path -LiteralPath $path) { $saved[$path] = [IO.File]::ReadAllBytes($path) }
 }
@@ -22,6 +25,14 @@ try {
     $arguments = @('-batchmode', '-force-d3d11', '-projectPath', ('"' + $repo + '"'),
         '-executeMethod', 'OriginalRenderingIntegrationValidation.Run',
         '-integrationOutput', ('"' + $output + '"'), '-logFile', ('"' + (Join-Path $output 'unity.log') + '"'))
+    if ($ConfirmedProducerProfile) {
+        $profile = (Resolve-Path -LiteralPath $ConfirmedProducerProfile).Path
+        $arguments += @('-confirmedProducerProfile', ('"' + $profile + '"'))
+    }
+    if ($ConfirmedOwnerClock) {
+        $clock = (Resolve-Path -LiteralPath $ConfirmedOwnerClock).Path
+        $arguments += @('-confirmedOwnerClock', ('"' + $clock + '"'))
+    }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()
 }

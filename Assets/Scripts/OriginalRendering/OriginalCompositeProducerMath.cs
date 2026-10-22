@@ -3,10 +3,78 @@ using UnityEngine;
 
 namespace Gallop.Live.Rendering
 {
-    // Pure arithmetic from saved producer instructions. No asset, clock, camera,
-    // or kind-table lookup; callers explicitly supply the unresolved dependencies.
+    // Pure arithmetic from saved producer instructions. No asset, clock or camera
+    // lookup; callers explicitly supply the qualified scalar/kind dependencies.
     public static class OriginalCompositeProducerMath
     {
+        public readonly struct ComparisonFrames
+        {
+            public readonly int Current, Comparison;
+            public readonly float CurrentOwnerTime, ComparisonOwnerTime;
+            internal ComparisonFrames(float currentOwnerTime, float comparisonOwnerTime,
+                int current, int comparison)
+            { CurrentOwnerTime = currentOwnerTime; ComparisonOwnerTime = comparisonOwnerTime;
+              Current = current; Comparison = comparison; }
+        }
+
+        // The two owner-time fields and their multiplier must be qualified by the
+        // caller. This does not consume ViewerFrame, Unity frameCount or serial.
+        public static ComparisonFrames ResolveOwnerComparisonFrames(float currentOwnerTime,
+            float comparisonOwnerTime, float confirmedMultiplier)
+        {
+            return new ComparisonFrames(currentOwnerTime, comparisonOwnerTime,
+                ResolveDurationCount(currentOwnerTime, confirmedMultiplier),
+                ResolveDurationCount(comparisonOwnerTime, confirmedMultiplier));
+        }
+
+        static float Single(float value)
+        { return BitConverter.ToSingle(BitConverter.GetBytes(value), 0); }
+        // Explicit, immutable dependencies qualified by the caller for its edition.
+        // No private capture, address, game path or guessed table is embedded here.
+        public sealed class ConfirmedProfile
+        {
+            public readonly float FixedThickness, MinimumThickness, AngleDivisor;
+            public readonly float SecondaryOrigin, SecondaryScale, DurationMultiplier;
+            readonly float[] kindBases;
+            public ConfirmedProfile(float fixedThickness, float minimumThickness,
+                float angleDivisor, float secondaryOrigin, float secondaryScale,
+                float durationMultiplier, float[] kindBases)
+            {
+                if (kindBases == null || kindBases.Length != 11)
+                    throw new ArgumentException("An explicitly resolved eleven-entry kind table is required.", nameof(kindBases));
+                FixedThickness = fixedThickness; MinimumThickness = minimumThickness;
+                AngleDivisor = angleDivisor; SecondaryOrigin = secondaryOrigin;
+                SecondaryScale = secondaryScale; DurationMultiplier = durationMultiplier;
+                this.kindBases = (float[])kindBases.Clone();
+            }
+            public float? KindBase(int? kind)
+            {
+                if (!kind.HasValue) return null;
+                // The saved unsigned range check sends negative and >10 to zero.
+                return (uint)kind.Value <= 10 ? kindBases[kind.Value] : 0f;
+            }
+            public AngleInputs Angles(int? kind, AngleInputs overrides)
+            {
+                return new AngleInputs(overrides.KindBase ?? KindBase(kind),
+                    overrides.Divisor ?? AngleDivisor,
+                    overrides.SecondaryOrigin ?? SecondaryOrigin,
+                    overrides.SecondaryScale ?? SecondaryScale);
+            }
+        }
+
+        // The producer multiplies in float32, widens, floors, then CVTTSD2SI.
+        // The multiplier is a captured dependency, not a Viewer FPS assumption.
+        public static int ResolveDurationCount(float rawDuration, float multiplier)
+        {
+            // Mono may retain an intermediate as double across a float local.
+            // A real 32-bit store preserves the producer's MULSS-before-CVT order.
+            float scaled = Single(rawDuration * multiplier);
+            double rounded = System.Math.Floor((double)scaled);
+            if (double.IsNaN(rounded) || rounded < int.MinValue || rounded >= 2147483648d)
+                return int.MinValue; // x64 CVTT indefinite integer.
+            return (int)rounded;
+        }
+
         public readonly struct ThicknessInputs
         {
             public readonly float? FixedValue, Minimum;
@@ -74,8 +142,8 @@ namespace Gallop.Live.Rendering
             float? z = null, w = null;
             if (missing == MissingAngleInput.None)
             {
-                float sum = inputs.KindBase.Value + values.RotationSource.Value;
-                z = sum / inputs.Divisor.Value;
+                float sum = Single(inputs.KindBase.Value + values.RotationSource.Value);
+                z = Single(sum / inputs.Divisor.Value);
             }
             if (!values.Kind.HasValue) missing |= MissingAngleInput.Kind;
             else if (values.Kind.Value != 10) w = 0f;
@@ -87,9 +155,9 @@ namespace Gallop.Live.Rendering
                 if (values.SecondaryAngleSource.HasValue && inputs.SecondaryOrigin.HasValue &&
                     inputs.SecondaryScale.HasValue && inputs.Divisor.HasValue)
                 {
-                    float scaled = values.SecondaryAngleSource.Value * inputs.SecondaryScale.Value;
-                    float difference = inputs.SecondaryOrigin.Value - scaled;
-                    w = difference / inputs.Divisor.Value;
+                    float scaled = Single(values.SecondaryAngleSource.Value * inputs.SecondaryScale.Value);
+                    float difference = Single(inputs.SecondaryOrigin.Value - scaled);
+                    w = Single(difference / inputs.Divisor.Value);
                 }
             }
             return new AngleResult(z, w, missing);
@@ -127,13 +195,13 @@ namespace Gallop.Live.Rendering
             }
 
             int delta = unchecked(frame - keyFrame);
-            float ratio = (float)delta / (float)durationCount;
+            float ratio = Single((float)delta / (float)durationCount);
             ratio = ClampFadeSetter(ratio);
             bool rising = keyEnabled && kind != 0;
             float start = rising ? 0f : 1f;
-            float difference = (rising ? 1f : 0f) - start;
-            float scaled = difference * ratio;
-            float fade = scaled + start;
+            float difference = Single((rising ? 1f : 0f) - start);
+            float scaled = Single(difference * ratio);
+            float fade = Single(scaled + start);
             return new FadeResult(end, fade, true, false,
                 ownerComparisonFrame < keyFrame ? true : (bool?)null);
         }

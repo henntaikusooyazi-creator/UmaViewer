@@ -15,12 +15,18 @@ namespace Gallop.Live.Rendering
             public readonly float ViewerFrame;
             public readonly int TrackOrdinal, CurrentKeyFrame;
             public readonly int? NextKeyFrame;
+            public readonly bool KeyEnabled;
+            public readonly float RawFadeDuration;
+            public readonly OriginalCompositeProducerMath.ComparisonFrames? ComparisonClock;
             public readonly OriginalCompositeCueAdapter.Snapshot Cue;
             public readonly Camera ViewerCamera;
             internal Selection(long serial, float frame, int k, int keyFrame, int? nextFrame,
-                OriginalCompositeCueAdapter.Snapshot cue, Camera camera)
+                OriginalCompositeCueAdapter.Snapshot cue, Camera camera,
+                bool keyEnabled, float rawFadeDuration,
+                OriginalCompositeProducerMath.ComparisonFrames? comparisonClock)
             { Serial = serial; ViewerFrame = frame; TrackOrdinal = k; CurrentKeyFrame = keyFrame;
-              NextKeyFrame = nextFrame; Cue = cue; ViewerCamera = camera; }
+              NextKeyFrame = nextFrame; Cue = cue; ViewerCamera = camera;
+              KeyEnabled = keyEnabled; RawFadeDuration = rawFadeDuration; ComparisonClock = comparisonClock; }
         }
         public sealed class Frame
         {
@@ -43,12 +49,26 @@ namespace Gallop.Live.Rendering
         long serial, nextToken;
         float viewerFrame;
         bool collecting;
+        float? ownerClockMultiplier;
+        OriginalCompositeProducerMath.ComparisonFrames? ownerClock;
         public event Action<Frame> FrameReady;
         public Frame LastFrame { get; private set; }
         public Exception LastException { get; private set; }
         public int FaultCount { get; private set; }
         public void BindTrack(int trackOrdinal, int compositeIndex) { compositeIndices[trackOrdinal] = compositeIndex; }
         public void UnbindTrack(int trackOrdinal) { compositeIndices.Remove(trackOrdinal); }
+        // Opt in before an actual AlterUpdate. A late registration must wait for
+        // its next owner update; BeginFrame never reconstructs a missing clock.
+        public void UseConfirmedOwnerClock(float confirmedMultiplier)
+        { ownerClockMultiplier = confirmedMultiplier; ownerClock = null; }
+        public void ClearConfirmedOwnerClock()
+        { ownerClockMultiplier = null; ownerClock = null; }
+        public void CaptureOwnerTimes(float currentOwnerTime, float comparisonOwnerTime)
+        {
+            if (!ownerClockMultiplier.HasValue) return;
+            ownerClock = OriginalCompositeProducerMath.ResolveOwnerComparisonFrames(
+                currentOwnerTime, comparisonOwnerTime, ownerClockMultiplier.Value);
+        }
         long TokenFor(object key) => tokens.GetValue(key, _ => new Token { Id = ++nextToken }).Id;
         public void BeginFrame(float frame)
         { pending.Clear(); viewerFrame = frame; serial++; collecting = true; }
@@ -67,7 +87,8 @@ namespace Gallop.Live.Rendering
                 var cue = OriginalCompositeCueAdapter.FromSelectedKeys(context, Values(current),
                     next != null ? Values(next) : (OriginalCompositeCueAdapter.CueValues?)null,
                     usedRatio.HasValue, usedRatio.GetValueOrDefault(), default, null);
-                pending.Add(new Selection(serial, frame, k, current.frame, next != null ? next.frame : (int?)null, cue, viewerCamera));
+                pending.Add(new Selection(serial, frame, k, current.frame, next != null ? next.frame : (int?)null,
+                    cue, viewerCamera, current.enableMultiCamera, current.fadeTime, ownerClock));
             }
             catch (Exception e) { Record(e); }
         }

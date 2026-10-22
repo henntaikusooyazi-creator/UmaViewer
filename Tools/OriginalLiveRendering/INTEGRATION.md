@@ -38,3 +38,23 @@ Unity 2022.3.62f3／D3D11で **94/94 PASS（従来42＋追加52）**。出力 `i
 このproviderは固定値・下限・角度依存・fade・mappingを人工入力として供給しています。自然ライブ全体のproviderが完成した意味ではありません。別途行った実SSE MAXSSとの81組の比較は純粋算術の補助検証で、152チェックや原作実測の件数へ足しません。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`。原作S生成cameraと自然helperのUnknown、過去のPendingManualRecoveryを維持します。
+
+## 確認済みproducer profileを使う結合検証
+
+限定実機採取で解決した依存を外部profileとして供給し、Unity 2022.3.62f3／D3D11で **175/175 PASS**。従来152件を再実行し、profile算術・実Control結合23件を追加しました。内訳はbaseline42、camera選択52、厚さ12、従来provider46、確認済みprofile23です。
+
+`Invoke-IntegrationValidation.ps1` の任意引数 `-ConfirmedProducerProfile <明示JSON>` でローカルの確認済み依存を渡せます。省略時は公開の人工profileで検証し、どちらを使ったかはsummaryの `confirmedProfileSource` へ記録します。私有profileやcaptureはrepoへ含めません。
+
+current keyの有効フラグ・fadeTimeをimmutableなSelectionに保持し、その同じ選択から厚さ・角度・duration/fadeをresolverへ供給しました。Built-in／URP14で各64×32の全RGBAが、独立した従来の評価済み入力経路と一致しました。clock不足時の出力保持と、評価済み入力の優先も確認しました。
+
+初期検証で同名Math型の衝突と、Monoの高精度中間値が原作のscalar丸め順と異なる問題を検出・修正しました。float32 bit一致と倍率積・下降fadeの境界ケースを検証に保持しています。新しいepsilonやshader補正は加えていません。
+
+wrapperはProjectSettingsに加え、隔離DLLに付属する既存metadataも実行前のbytesへ戻します。DLL本体の隔離・削除状態を変更せず、Unity importによるmetadata削除だけを持ち出さないための処理です。自然楽曲通し、native物理、S生成camera、未知clock/receiver/mappingは本受入で成立扱いにしません。
+
+## owner比較値の接続受入
+
+後続の検証は **228/228 PASS** です。従来175件を含み、owner比較値の投影・実Controlからの供給・入力不足時の保持など53件を追加しました。`-ConfirmedOwnerClock` へ公開repo外の明示入力を渡し、保存されたowner時刻のbit列、比較整数2値、setter入力を照合しています。省略時は人工入力を使い、summaryで出所を区別します。
+
+実 `AlterUpdate` → owner比較値snapshot → 同じSelection → resolver → coverage → compositorを実行し、Built-in／URP14の各64×32全RGBAが独立した評価済みfadeの経路と一致しました。clockのopt-in直後、片方だけの明示整数、解除後は出力を保持します。明示した整数の組と既存評価値の優先も確認しました。
+
+GPU試験のgeometry・key・TextureMappingは人工入力です。原作の保存比較に含まれた無効keyの終点値を、自然なfade遷移の検証へ広げません。時刻原点・音声epoch・最終画面frameとの対応、自然楽曲の通し受入は未成立です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false` を維持します。

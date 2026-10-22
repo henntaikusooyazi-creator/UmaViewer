@@ -357,6 +357,7 @@ namespace Gallop.Live.Cutt
             _isNowAlterUpdate = true;
             _oldLiveTime = currentLiveTime;
             currentLiveTime = liveTime;
+            OriginalCompositeBridge?.CaptureOwnerTimes(currentLiveTime, _oldLiveTime);
             _currentFrame = currentLiveTime * 60f;
             _oldFrame = _oldLiveTime * 60f;
             _deltaTime = currentLiveTime - _oldLiveTime;

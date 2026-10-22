@@ -25,6 +25,10 @@ public static class OriginalRenderingIntegrationValidation
         public int checks, baselineChecks, builtinFrames, urpFrames, providerCalls;
         public int cameraSelectionChecks, cameraSelectionBuiltinFrames, cameraSelectionUrpFrames;
         public int thicknessMathChecks, drawProviderChecks, drawProviderBuiltinFrames, drawProviderUrpFrames, drawProviderCalls;
+        public int confirmedProducerChecks;
+        public int ownerClockChecks, ownerClockRows;
+        public string ownerClockSource;
+        public string confirmedProfileSource;
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
         public bool TestOnly = true, OriginalVerified = false, runtime_contract = false;
@@ -41,6 +45,27 @@ public static class OriginalRenderingIntegrationValidation
         public bool matchesExplicitReference;
     }
     static Result result;
+    [Serializable] sealed class ProducerProfileData
+    {
+        public float fixedThickness, minimumThickness, angleDivisor, secondaryOrigin, secondaryScale, durationMultiplier;
+        public float[] kindBases;
+    }
+    static ProducerProfileData profileData;
+    static M.ConfirmedProfile confirmedProfile;
+    [Serializable] sealed class OwnerClockSample
+    {
+        public int currentTimeBits, comparisonTimeBits, currentFrame, comparisonFrame;
+        public int keyFrame, rawDurationBits, kind, inputFadeBits;
+        public bool enabled;
+    }
+    [Serializable] sealed class OwnerClockData
+    {
+        public float multiplier;
+        public OwnerClockSample[] samples;
+    }
+    static OwnerClockData ownerClockData;
+    static float FromBits(int bits) => BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+    static int FloatBits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
     static readonly BindingFlags InstancePrivate = BindingFlags.Instance | BindingFlags.NonPublic;
     static readonly Vector4 Identity = new Vector4(1, 1, 0, 0);
@@ -109,8 +134,36 @@ public static class OriginalRenderingIntegrationValidation
             Check(Application.isBatchMode, "Run acceptance only in its dedicated batch Editor.");
             Check(result.controlAssembly == "umamusume", "Actual Viewer assembly, not a Control stub.");
             Check(SystemInfo.graphicsDeviceType == GraphicsDeviceType.Direct3D11, "D3D11 device.");
-            ExerciseThicknessMath(); Exercise(false); Exercise(true);
-            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks;
+            int profileArg = Array.IndexOf(args, "-confirmedProducerProfile");
+            profileData = profileArg >= 0 ? JsonUtility.FromJson<ProducerProfileData>(File.ReadAllText(args[profileArg + 1])) :
+                new ProducerProfileData { fixedThickness = -.5f, minimumThickness = .03125f, angleDivisor = 720,
+                    secondaryOrigin = 45, secondaryScale = .25f, durationMultiplier = 32,
+                    kindBases = new float[] { 0, 0, 0, 45, -45, 90, 135, -135, 225, -225, 0 } };
+            result.confirmedProfileSource = profileArg >= 0 ? "ExplicitLocalProfile" : "SyntheticDependencies";
+            confirmedProfile = new M.ConfirmedProfile(profileData.fixedThickness, profileData.minimumThickness,
+                profileData.angleDivisor, profileData.secondaryOrigin, profileData.secondaryScale,
+                profileData.durationMultiplier, profileData.kindBases);
+            int clockArg = Array.IndexOf(args, "-confirmedOwnerClock");
+            if (clockArg >= 0)
+            {
+                string clockPath = args[clockArg + 1];
+                if (new FileInfo(clockPath).Length > 65536) throw new InvalidOperationException("Bounded owner clock input required.");
+                ownerClockData = JsonUtility.FromJson<OwnerClockData>(File.ReadAllText(clockPath));
+                result.ownerClockSource = "ExplicitLocalOwnerClock";
+            }
+            else
+            {
+                int duration = (int)Math.Floor((double)(.5f * profileData.durationMultiplier));
+                ownerClockData = new OwnerClockData { multiplier = 10, samples = new[] {
+                    new OwnerClockSample { currentTimeBits = FloatBits(.7f), comparisonTimeBits = FloatBits(.6f),
+                        currentFrame = 7, comparisonFrame = 6, keyFrame = 5, rawDurationBits = FloatBits(.5f),
+                        kind = 3, enabled = true, inputFadeBits = FloatBits(2f / duration) } } };
+                result.ownerClockSource = "SyntheticOwnerInputs";
+            }
+            if (ownerClockData?.samples == null || ownerClockData.samples.Length < 1 || ownerClockData.samples.Length > 128)
+                throw new InvalidOperationException("One to 128 explicit owner-clock samples required.");
+            ExerciseConfirmedMath(); ExerciseOwnerClockMath(); ExerciseThicknessMath(); Exercise(false); Exercise(true);
+            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks;
             result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
@@ -215,6 +268,8 @@ public static class OriginalRenderingIntegrationValidation
             Check(control.OriginalCompositeBridge == null && !(bool)Field("_isNowAlterUpdate").GetValue(control), "Existing Control finishes after registration disposal.");
             ExerciseCameraSelection(control, director, sheet, urp);
             ExerciseDrawProvider(control, sheet, urp);
+            ExerciseConfirmedProvider(control, sheet, urp);
+            ExerciseOwnerClockProvider(control, sheet, urp);
         }
         finally
         {
@@ -226,6 +281,198 @@ public static class OriginalRenderingIntegrationValidation
             Check(before == Resources.FindObjectsOfTypeAll<RenderTexture>().Count(r => r.name.StartsWith("Original.")) && !Resources.FindObjectsOfTypeAll<Camera>().Any(c => c.name == "Original.ExplicitCamera"), "Owned camera/RT cleanup: " + urp);
         }
     }
+    static void ExerciseOwnerClockMath()
+    {
+        int start = result.checks;
+        try
+        {
+            var seek = M.ResolveOwnerComparisonFrames(.2f, 1.5f, 10);
+            Check(seek.Current == 2 && seek.Comparison == 15, "Owner comparison time is independent during a backward seek.");
+            var paused = M.ResolveOwnerComparisonFrames(.7f, .7f, 10);
+            Check(paused.Current == 7 && paused.Comparison == 7, "Repeated owner time is preserved without a synthetic frame increment.");
+            var negative = M.ResolveOwnerComparisonFrames(-.01f, 0, 10);
+            Check(negative.Current == -1 && negative.Comparison == 0, "Owner time projection uses floor without a nonnegative clamp.");
+            foreach (var sample in ownerClockData.samples)
+            {
+                var projected = M.ResolveOwnerComparisonFrames(FromBits(sample.currentTimeBits),
+                    FromBits(sample.comparisonTimeBits), ownerClockData.multiplier);
+                Check(projected.Current == sample.currentFrame && projected.Comparison == sample.comparisonFrame,
+                    "Saved independent owner integers match both projected owner-time fields.");
+                int duration = M.ResolveDurationCount(FromBits(sample.rawDurationBits), confirmedProfile.DurationMultiplier);
+                var fade = M.EvaluateFadeAfterResolvedDuration(projected.Current, projected.Comparison,
+                    sample.keyFrame, duration, sample.enabled, sample.kind);
+                Check(FloatBits(fade.Fade) == sample.inputFadeBits, "Saved original setter input matches the owner-clock fade calculation bit for bit.");
+            }
+            result.ownerClockRows = ownerClockData.samples.Length;
+        }
+        finally { result.ownerClockChecks += result.checks - start; }
+    }
+
+    static void ExerciseOwnerClockProvider(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int start = result.checks;
+        try
+        {
+            var sample = ownerClockData.samples[0];
+            // Saved owner inputs drive the real AlterUpdate. Geometry and keys in
+            // this GPU acceptance remain explicit artificial fixtures.
+            int keyFrame = unchecked(sample.currentFrame - 5);
+            for (int k = 0; k < 2; k++)
+            {
+                var keys = sheet.multiCameraPosKeys[k].keys.thisList;
+                keys[0].frame = keyFrame; keys[0].enableMultiCamera = true; keys[0].fadeTime = .5f;
+                keys[0].maskType = (LiveTimelineKeyMultiCameraPositionData.MaskType)3;
+                keys[1].frame = unchecked(sample.currentFrame + 50); keys[1].interpolateType = 0;
+            }
+            Field("_motionSequenceArray").SetValue(control,
+                Array.CreateInstance(Field("_motionSequenceArray").FieldType.GetElementType(), 0));
+            sheet.facial1Set = null;
+            var otherFacial = typeof(LiveTimelineWorkSheet).GetField("other4FacialArray");
+            otherFacial.SetValue(sheet, Array.CreateInstance(otherFacial.FieldType.GetElementType(), 0));
+            int duration = (int)System.Math.Floor((double)(.5f * profileData.durationMultiplier));
+            float expectedFade = 5f / duration;
+            bool reference = false, partial = false, explicitPair = false, evaluated = false;
+            var resolved = new Dictionary<int, A.Snapshot>();
+            var resolver = new OriginalLiveDrawInputResolver(s =>
+            {
+                var draw = new A.DrawState(evaluated ? (float?).75f : reference ? expectedFade : (float?)null,
+                    .1f, new Vector2(.25f, 0));
+                return new OriginalLiveDrawInputResolver.Inputs(draw, new A.TextureMapping(Identity, 1, Identity, 0))
+                    .WithConfirmedProfile(confirmedProfile,
+                        partial || explicitPair ? (int?)keyFrame : null,
+                        explicitPair ? (int?)sample.comparisonFrame : null);
+            });
+            var output = Target(64, 32);
+            using (var registration = new OriginalLiveTimelineRegistration(control, 0, 1, _ => control.GetCamera(0).camera,
+                Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output,
+                s => { var value = resolver.Resolve(s); resolved[s.TrackOrdinal] = value; return value; }))
+            {
+                void OwnerTick()
+                {
+                    Field("_currentLiveTime").SetValue(control, FromBits(sample.comparisonTimeBits));
+                    control.AlterUpdate(FromBits(sample.currentTimeBits));
+                    control.AlterLateUpdate();
+                }
+                registration.Bridge.UseConfirmedOwnerClock(ownerClockData.multiplier);
+                Field("_currentFrame").SetValue(control, (float)sample.currentFrame);
+                control.AlterLateUpdate();
+                Check(registration.Session.RenderCount == 0 && !registration.Bridge.LastFrame.Selections[0].ComparisonClock.HasValue,
+                    "Opt in waits for an owner update; Viewer frame and serial do not supply missing clocks.");
+                OwnerTick();
+                var selected = registration.Bridge.LastFrame.Selections[0];
+                var clock = selected.ComparisonClock.Value;
+                Check(clock.Current == sample.currentFrame && clock.Comparison == sample.comparisonFrame &&
+                    FloatBits(clock.CurrentOwnerTime) == sample.currentTimeBits && FloatBits(clock.ComparisonOwnerTime) == sample.comparisonTimeBits,
+                    "Real AlterUpdate supplies both exact owner-time fields to the same Selection.");
+                Check(registration.Session.RenderCount == 1 && registration.Session.LastException == null &&
+                    FloatBits(resolved[0].Draw.Fade.Value) == FloatBits(expectedFade),
+                    "Owner update -> comparison pair -> resolver -> GPU: " + urp);
+                var actual = Read(output); reference = true; OwnerTick(); reference = false;
+                Check(Read(output).SequenceEqual(actual), "Owner-clock GPU matches independent evaluated fade at every RGBA pixel: " + urp);
+                partial = true; int rendered = registration.Session.RenderCount; var prior = Read(output);
+                OwnerTick();
+                Check(registration.Session.RenderCount == rendered && registration.Session.LastUnresolved.HasFlag(A.Unresolved.Fade) && Read(output).SequenceEqual(prior),
+                    "A partial explicit pair never borrows its other half from the owner snapshot.");
+                partial = false; explicitPair = true; OwnerTick();
+                Check(FloatBits(resolved[0].Draw.Fade.Value) == FloatBits(0), "A complete explicit comparison pair keeps priority over owner time.");
+                explicitPair = false; evaluated = true; OwnerTick();
+                Check(resolved[0].Draw.Fade == .75f, "Existing evaluated fade keeps priority over owner clock.");
+                evaluated = false; registration.Bridge.ClearConfirmedOwnerClock();
+                rendered = registration.Session.RenderCount; prior = Read(output); OwnerTick();
+                Check(registration.Session.RenderCount == rendered && !registration.Bridge.LastFrame.Selections[0].ComparisonClock.HasValue && Read(output).SequenceEqual(prior),
+                    "Clearing the opt-in clock restores the missing-input path and preserves output.");
+                Check(selected.ComparisonClock.Value.Current == sample.currentFrame && selected.ComparisonClock.Value.Comparison == sample.comparisonFrame,
+                    "Previously selected clock snapshots remain immutable across later updates and clearing.");
+            }
+        }
+        finally { result.ownerClockChecks += result.checks - start; }
+    }
+
+    static void ExerciseConfirmedMath()
+    {
+        int start = result.checks;
+        try
+        {
+            Check(M.ResolveDurationCount(.7f, 10) == 7, "Duration multiplication rounds to float32 before widening and floor.");
+            Check(M.ResolveDurationCount(-.01f, 10) == -1, "Negative duration floors toward minus infinity.");
+            Check(M.ResolveDurationCount(0, 60) == 0 && M.ResolveDurationCount(-0f, 60) == 0, "Signed-zero durations convert to integer zero.");
+            Check(M.ResolveDurationCount(float.NaN, 1) == int.MinValue, "NaN uses x64 indefinite integer.");
+            Check(M.ResolveDurationCount(float.PositiveInfinity, 1) == int.MinValue && M.ResolveDurationCount(float.NegativeInfinity, 1) == int.MinValue, "Infinite durations use x64 indefinite integer.");
+            Check(M.ResolveDurationCount(2147483648f, 1) == int.MinValue && M.ResolveDurationCount(-2147483648f, 1) == int.MinValue, "Conversion upper/lower endpoints preserve x64 behavior.");
+            Check(BitConverter.ToInt32(BitConverter.GetBytes(M.EvaluateFadeAfterResolvedDuration(102, 101, 100, 3, false, 5).Fade), 0) == 0x3eaaaaaa,
+                "Falling fade rounds the scalar division before subtraction, matching the saved SSE order.");
+            Check(confirmedProfile.KindBase(-1) == 0 && confirmedProfile.KindBase(11) == 0 && !confirmedProfile.KindBase(null).HasValue, "Unsigned helper bounds and missing kind are separate.");
+            var table = (float[])profileData.kindBases.Clone();
+            var cloned = new M.ConfirmedProfile(1, 2, 3, 4, 5, 6, table);
+            float first = table[3]; table[3] += 1;
+            Check(cloned.KindBase(3) == first, "Caller table mutation cannot change a profile.");
+            bool rejected = false;
+            try { new M.ConfirmedProfile(1, 2, 3, 4, 5, 6, new float[10]); } catch (ArgumentException) { rejected = true; }
+            Check(rejected, "Incomplete kind table is rejected.");
+            var angles = confirmedProfile.Angles(3, new M.AngleInputs(17, 23, 29, 31));
+            Check(angles.KindBase == 17 && angles.Divisor == 23 && angles.SecondaryOrigin == 29 && angles.SecondaryScale == 31, "Explicit angle dependencies retain priority.");
+        }
+        finally { result.confirmedProducerChecks += result.checks - start; }
+    }
+
+    static void ExerciseConfirmedProvider(LiveTimelineControl control, LiveTimelineWorkSheet sheet, bool urp)
+    {
+        int start = result.checks;
+        try
+        {
+            bool reference = false, clock = true, evaluated = false;
+            var resolved = new Dictionary<int, A.Snapshot>();
+            for (int k = 0; k < 2; k++)
+            {
+                var keys = sheet.multiCameraPosKeys[k].keys.thisList;
+                keys[0].maskType = (LiveTimelineKeyMultiCameraPositionData.MaskType)(3 + k);
+                keys[0].lineThickness = .0001f; keys[1].lineThickness = .0003f;
+                keys[0].fadeTime = .5f; keys[1].fadeTime = 9;
+                keys[0].enableMultiCamera = true;
+            }
+            int count = (int)Math.Floor((double)(.5f * profileData.durationMultiplier));
+            float expectedFade = 5f / count;
+            float expectedThickness = .0002f > profileData.minimumThickness ? .0002f : profileData.minimumThickness;
+            int FloatBits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
+            var resolver = new OriginalLiveDrawInputResolver(s =>
+            {
+                var expectedAngles = new Vector2((profileData.kindBases[s.Cue.Values.Kind.Value] + 20) / profileData.angleDivisor, 0);
+                if (reference) return new OriginalLiveDrawInputResolver.Inputs(
+                    new A.DrawState(evaluated ? .75f : expectedFade, evaluated ? .25f : expectedThickness,
+                        evaluated ? new Vector2(.125f, 0) : expectedAngles), new A.TextureMapping(Identity, 1, Identity, 0));
+                var supplied = evaluated ? new A.DrawState(.75f, .25f, new Vector2(.125f, 0)) : default;
+                return new OriginalLiveDrawInputResolver.Inputs(supplied, new A.TextureMapping(Identity, 1, Identity, 0))
+                    .WithConfirmedProfile(confirmedProfile, clock ? (int?)105 : null, clock ? (int?)104 : null);
+            });
+            var output = Target(64, 32);
+            using (var registration = new OriginalLiveTimelineRegistration(control, 0, 1, _ => control.GetCamera(0).camera,
+                Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), output,
+                s => { var value = resolver.Resolve(s); if (!reference) resolved[s.TrackOrdinal] = value; return value; }))
+            {
+                void TickConfirmed() { Field("_currentFrame").SetValue(control, 105f); control.AlterLateUpdate(); }
+                TickConfirmed();
+                Check(registration.Session.RenderCount == 1 && registration.Session.LastException == null, "Selected keys -> confirmed profile -> coverage -> GPU output: " + urp);
+                Check(FloatBits(resolved[0].Draw.Fade.Value) == FloatBits(expectedFade) &&
+                    FloatBits(resolved[0].Draw.EffectiveThickness.Value) == FloatBits(expectedThickness) &&
+                    FloatBits(resolved[0].Draw.ShaderAngles.Value.x) == FloatBits((profileData.kindBases[3] + 20) / profileData.angleDivisor),
+                    "Natural producer dependencies fill all three draw components with identical float32 bits.");
+                var selected = registration.Bridge.LastFrame.Selections[0];
+                Check(selected.RawFadeDuration == .5f && selected.KeyEnabled && selected.CurrentKeyFrame == 100 && selected.Cue.AppliedRatio == .5f,
+                    "Fade uses immutable current key state rather than the interpolated next key.");
+                var actual = Read(output); reference = true; TickConfirmed(); reference = false;
+                Check(Read(output).SequenceEqual(actual), "Profile output matches independent evaluated input at every RGBA pixel: " + urp);
+                clock = false; int rendered = registration.Session.RenderCount; var previous = Read(output);
+                TickConfirmed();
+                Check(registration.Session.RenderCount == rendered && registration.Session.LastUnresolved.HasFlag(A.Unresolved.Fade) && Read(output).SequenceEqual(previous),
+                    "Missing explicit comparison clock preserves output; no ViewerFrame conversion.");
+                evaluated = true; TickConfirmed();
+                Check(registration.Session.RenderCount == rendered + 1 && resolved[0].Draw.Fade == .75f && resolved[0].Draw.EffectiveThickness == .25f && resolved[0].Draw.ShaderAngles == new Vector2(.125f, 0),
+                    "Existing evaluated values override the confirmed profile without a clock.");
+            }
+        }
+        finally { result.confirmedProducerChecks += result.checks - start; }
+    }
+
     static void ExerciseThicknessMath()
     {
         int firstCheck = result.checks;

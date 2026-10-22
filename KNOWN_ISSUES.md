@@ -20,17 +20,20 @@
 ## 未確定・未実装
 
 - Resolve元Sを実際に描いたcameraの正式帰属：`Unknown`。
-- 自然fadeのduration生成、kind別の回転helper・未取得定数：未確定。raw値から単位や固定FPSを推測しません。
+- duration生成の倍率・floor helper、kind別baseと回転定数は限定採取から解決し、ConfirmedProfile経由で接続済みです。owner時刻2値から比較整数を供給する明示opt-in経路も接続しました。原作とViewerの時刻原点・音声epoch、kind 0の動的状態、Viewer型にないsecondary sourceは別の未確定点です。
 - fade、有効thickness、shader角度、TextureMappingの自然な供給元：未接続部分あり。resolverへ確認済み値を明示供給できます。
-- 有効thicknessの確定分岐はmath／resolverへ接続済みですが、固定値・下限の実定数とkind 0の時間依存状態は未確定です。人工GPU入力での152チェックを、自然provider全体の完成と扱いません。既存constructorは追加計算を有効にせず、評価済み値が優先されます。
-- 固定値・下限の参照先を保存命令から再確認しましたが、限定確認した保存記録10件には対象の2個のfloat32が未収録です。実値を有効thicknessから逆算して埋めません。[保存証拠の範囲](Tools/OriginalLiveRendering/THICKNESS_CONSTANT_EVIDENCE.md) と最小の不足情報を記録しています。
+- 有効thicknessの固定値・下限は実機採取から解決し、既存math／resolverへ接続しました。kind 0の時間依存状態は未確定です。実値profileを使う175チェックも自然provider全体の完成とは区別し、既存constructorと評価済み値優先を保ちます。
+- 過去の保存記録調査では固定値・下限が未収録でしたが、後続の限定実機採取で読取成功・前後一致を確認しました。[保存証拠と後続採取](Tools/OriginalLiveRendering/THICKNESS_CONSTANT_EVIDENCE.md) を区別しています。
 - 同一更新の下地camera選択：実切替イベントとControl参照を使う明示closureをBuilt-in／URP14の人工GPU試験で確認済み。Director main参照はbridgeより後に更新されるため単純なgetter参照は避けます。通常ライブでの描画準備完了や自動登録まで検証した結果ではありません。[検証範囲](Tools/OriginalLiveRendering/NATURAL_LIVE_PATH.md#同一control更新でのcamera選択検証) を参照してください。
 - mask alphaの過去実測比較には9点の1/255差が残っています。補正値やepsilonは加えていません。
 - PS1の境界線色、全楽曲・全frame・全解像度での再現：未完了。
 - 元Viewer f1の通常ライブ受入と、通常ライブへの自動切替：未実施。自動切替は今回の対象外です。
-- 最新原作F採取runの停止判定：`PendingManualRecovery`。今回の公開準備で過去の判定を書き換えません。
+- owner比較入力の228チェックは人工geometry・typed keyによる実Control→GPU受入です。原作setterとの保存比較は無効keyの終点値を含む限定区間であり、自然なfade遷移の受入へ広げません。`SourceToViewerClockContract=false`。
+- 過去の原作F採取runの停止判定：`PendingManualRecovery`。今回の公開準備で過去の判定を書き換えません。
 
 ## 明示利用時の制約
+
+- 追加採取では、collectorの試験成功と、外側のreceipt検証器の受入を別々に確認する必要があります。今回、読取り追加数の見積り不足と追加clock欄の検証漏れを検出しました。採取数を有限に減らし、既存上限を維持する検査と、追加欄の型・件数・同じeventへの結合・既存停止条件を拒否例も含めて検証する処理を追加しています。元Pending receiptは保持し、保存証拠の再照合とprocess終了後の所有接続復元を別に記録しました。
 
 - **BREAKING RISK（明示camera描画時）:** 追加camera描画は負荷と描画callbackを増やします。source cameraのscript、post effect、AdditionalCameraData、camera stack、custom rendererは複製しません。通常ライブを保持するにはbridgeを未登録のまま使えます。独自producerを `RenderSequential` へ渡す選択肢もあります。
 - **BREAKING RISK（serialized schema）:** typed groupへの `MultiCameraNo` 追加により、JSON出力にfieldが増えます。旧データでfieldが存在しない場合の0を、原作の確定番号として使わず、明示 `TrackBinding(k,j)` を使用してください。既存描画はこのfieldを読みません。
