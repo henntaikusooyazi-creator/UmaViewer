@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using Gallop.Live.Rendering;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -11,26 +12,55 @@ using R = Gallop.Live.Rendering.OriginalMultiCameraRenderer;
 // camera identity inferred from image content, or game asset extraction.
 public sealed class OriginalLiveChannelEvidence : IDisposable
 {
+    [Serializable] public sealed class TextureInfo
+    {
+        public int width, height, depthBufferBits, msaaSamples, volumeDepth, mipCount;
+        public string format, graphicsFormat, dimension;
+        public bool sRGB, useMipMap, autoGenerateMips, enableRandomWrite, bindMS, useDynamicScale;
+        public TextureInfo(RenderTexture texture)
+        {
+            var d = texture.descriptor;
+            width = d.width; height = d.height; depthBufferBits = d.depthBufferBits;
+            msaaSamples = d.msaaSamples; volumeDepth = d.volumeDepth; mipCount = d.mipCount;
+            format = texture.format.ToString(); graphicsFormat = d.graphicsFormat.ToString(); dimension = d.dimension.ToString();
+            sRGB = texture.sRGB; useMipMap = d.useMipMap; autoGenerateMips = d.autoGenerateMips;
+            enableRandomWrite = d.enableRandomWrite; bindMS = d.bindMS; useDynamicScale = d.useDynamicScale;
+        }
+    }
+    [Serializable] public sealed class Capture
+    {
+        public string stage, png, pngSha256;
+        public long selectedSerial;
+        public int submissionSerial, inputVersion, sourceId, copyId;
+        public bool sRGBWriteAtCopy;
+        public TextureInfo source, copy;
+        public string readbackFormat = "RGBA32";
+        public bool readbackLinear = true;
+    }
     [Serializable] public sealed class Result
     {
         public bool complete, exactReplay, distinctCameras, sameOwnerPair;
+        public bool exactRightAccumulationReplay, exactLeftAccumulationReplay;
         public long selectedSerial;
         public int submissionSerial, sharedInputId, baseCameraId, rightCameraId, leftCameraId;
         public int rightTrack, leftTrack, rightComposite, leftComposite, rightKey, leftKey;
         public int replayDifferentPixels, rightContributionPixels, leftContributionPixels, baseContributionPixels;
+        public int rightAccumulationDifferentPixels = -1, leftAccumulationDifferentPixels = -1;
         public int rightOnlyCoveragePixels, leftOnlyCoveragePixels, baseOnlyCoveragePixels, width, height;
         public float currentOwnerTime, comparisonOwnerTime;
-        public string failure;
+        public string failure, activeColorSpace;
         public List<int> stages = new List<int>();
+        public List<Capture> captures = new List<Capture>();
         public bool OriginalVerified = false, runtime_contract = false;
     }
     readonly OriginalLiveContinuousRenderer preview;
     readonly int rightTrack, leftTrack;
     readonly Func<OriginalLiveTimelineBridge.Frame, Camera> expectedBase;
     readonly List<RenderTexture> targets = new List<RenderTexture>();
+    readonly List<RenderTexture> capturedTargets = new List<RenderTexture>();
     readonly OriginalMultiCameraRenderer replay;
     OriginalLiveTimelineBridge.Frame selected;
-    RenderTexture right, left, background, final, reference;
+    RenderTexture right, left, rightAccumulation, leftAccumulation, background, final, reference;
     bool disposed;
     public Result Evidence { get; } = new Result();
 
@@ -79,23 +109,38 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
                 Evidence.rightKey = r.CurrentKeyFrame; Evidence.leftKey = l.CurrentKeyFrame;
                 Evidence.currentOwnerTime = rc.CurrentOwnerTime; Evidence.comparisonOwnerTime = rc.ComparisonOwnerTime;
                 Evidence.width = step.Output.width; Evidence.height = step.Output.height;
+                Evidence.activeColorSpace = QualitySettings.activeColorSpace.ToString();
                 right = Target(step.SharedInput); left = Target(step.SharedInput);
+                rightAccumulation = Target(step.Accumulation); leftAccumulation = Target(step.Accumulation);
                 background = Target(step.Output); final = Target(step.Output); reference = Target(step.Output);
             }
             Require(ReferenceEquals(selected, trace.Selected) && step.FrameSerial == Evidence.submissionSerial &&
                 step.SharedInput.GetInstanceID() == Evidence.sharedInputId && (int)step.Step == Evidence.stages.Count,
                 "All stages must belong to the same selected update and shared input.");
             Evidence.stages.Add((int)step.Step);
-            if (step.Step == R.Stage.RightInputUpdated) { Require(step.InputVersion == 1, "Right input version required."); Graphics.CopyTexture(step.SharedInput, right); }
-            if (step.Step == R.Stage.LeftInputUpdated) { Require(step.InputVersion == 2, "Left input version required."); Graphics.CopyTexture(step.SharedInput, left); }
-            if (step.Step == R.Stage.BasePrepared) Graphics.CopyTexture(step.Output, background);
+            if (step.Step == R.Stage.RightInputUpdated) Copy(step, step.SharedInput, right, 1, "right-coverage.private.png");
+            if (step.Step == R.Stage.RightMaskDrawn) Copy(step, step.Accumulation, rightAccumulation, 1, "right-accumulation.private.png");
+            if (step.Step == R.Stage.LeftInputUpdated) Copy(step, step.SharedInput, left, 2, "left-coverage.private.png");
+            if (step.Step == R.Stage.LeftMaskDrawn) Copy(step, step.Accumulation, leftAccumulation, 2, "left-accumulation.private.png");
+            if (step.Step == R.Stage.BasePrepared) Copy(step, step.Output, background, 2, "base.private.png");
             if (step.Step == R.Stage.FinalCompositeDrawn)
             {
-                Graphics.CopyTexture(step.Output, final);
+                Copy(step, step.Output, final, 2, "two-channel.private.png");
                 Verify(); Evidence.complete = true; preview.TraceEmitted -= Observe;
             }
         }
         catch (Exception e) { Evidence.failure = e.ToString(); preview.TraceEmitted -= Observe; throw; }
+    }
+    void Copy(R.Trace step, RenderTexture source, RenderTexture target, int version, string png)
+    {
+        Require(step.InputVersion == version && source != target && (int)step.Step == Evidence.captures.Count + 1,
+            "Independent copies must be submitted at their exact stage and input version.");
+        Graphics.CopyTexture(source, target);
+        Evidence.captures.Add(new Capture { stage = step.Step.ToString(), png = png,
+            selectedSerial = Evidence.selectedSerial, submissionSerial = step.FrameSerial, inputVersion = step.InputVersion,
+            sourceId = source.GetInstanceID(), copyId = target.GetInstanceID(), sRGBWriteAtCopy = GL.sRGBWrite,
+            source = new TextureInfo(source), copy = new TextureInfo(target) });
+        capturedTargets.Add(target);
     }
     static Color32[] Read(RenderTexture source)
     {
@@ -123,7 +168,14 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
         var l = new R.Submission(left, R.InputEncoding.StraightColorWithCoverage);
         var none = new R.Submission(Texture2D.blackTexture, R.InputEncoding.StraightColorWithCoverage, 0);
         var actual = Read(final);
-        replay.Render(background, r, l, reference);
+        replay.Render(background, r, l, reference, step => {
+            if (step.Step == R.Stage.RightMaskDrawn)
+                Evidence.rightAccumulationDifferentPixels = Differences(Read(rightAccumulation), Read(step.Accumulation));
+            if (step.Step == R.Stage.LeftMaskDrawn)
+                Evidence.leftAccumulationDifferentPixels = Differences(Read(leftAccumulation), Read(step.Accumulation));
+        });
+        Evidence.exactRightAccumulationReplay = Evidence.rightAccumulationDifferentPixels == 0;
+        Evidence.exactLeftAccumulationReplay = Evidence.leftAccumulationDifferentPixels == 0;
         Evidence.replayDifferentPixels = Differences(actual, Read(reference)); Evidence.exactReplay = Evidence.replayDifferentPixels == 0;
         // Visible role claims use RGB only: replacing the base can also change
         // destination alpha, which the final composite deliberately preserves.
@@ -137,7 +189,8 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
             if (la[i].a > 0 && ra[i].a == 0) Evidence.leftOnlyCoveragePixels++;
             if (ra[i].a == 0 && la[i].a == 0) Evidence.baseOnlyCoveragePixels++;
         }
-        Require(Evidence.exactReplay && Evidence.rightContributionPixels > 0 && Evidence.leftContributionPixels > 0 && Evidence.baseContributionPixels > 0 &&
+        Require(Evidence.captures.Count == 6 && Evidence.exactRightAccumulationReplay && Evidence.exactLeftAccumulationReplay &&
+            Evidence.exactReplay && Evidence.rightContributionPixels > 0 && Evidence.leftContributionPixels > 0 && Evidence.baseContributionPixels > 0 &&
             Evidence.rightOnlyCoveragePixels > 0 && Evidence.leftOnlyCoveragePixels > 0 && Evidence.baseOnlyCoveragePixels > 0,
             "Exact replay and independent visible contributions from all three explicit camera roles required.");
     }
@@ -145,16 +198,19 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
     {
         Require(Evidence.complete && Evidence.failure == null, "Completed channel evidence required.");
         Directory.CreateDirectory(output);
+        for (int i = 0; i < Evidence.captures.Count; i++)
+            Evidence.captures[i].pngSha256 = SaveImage(capturedTargets[i], Path.Combine(output, Evidence.captures[i].png));
+        // Emit the receipt only after every independent image has been written.
         File.WriteAllText(Path.Combine(output, "channel-evidence.private.json"), JsonUtility.ToJson(Evidence, true));
-        SaveImage(final, Path.Combine(output, "two-channel.private.png"));
-        SaveImage(background, Path.Combine(output, "base.private.png"));
-        SaveImage(right, Path.Combine(output, "right-coverage.private.png"));
-        SaveImage(left, Path.Combine(output, "left-coverage.private.png"));
     }
-    static void SaveImage(RenderTexture source, string path)
+    static string SaveImage(RenderTexture source, string path)
     {
         var image = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false, true);
-        try { image.SetPixels32(Read(source)); image.Apply(); File.WriteAllBytes(path, image.EncodeToPNG()); }
+        try
+        {
+            image.SetPixels32(Read(source)); image.Apply(); var png = image.EncodeToPNG(); File.WriteAllBytes(path, png);
+            using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(png)).Replace("-", "").ToLowerInvariant();
+        }
         finally { Destroy(image); }
     }
     static void Destroy(Object value) { if (Application.isPlaying) Object.Destroy(value); else Object.DestroyImmediate(value); }

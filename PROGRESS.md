@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 左右mask描画後の中間RT採取
+
+既存の限定Editor観測へ、RightMaskDrawn／LeftMaskDrawn直後のAccumulation copyを追加しました。左右coverage・下地・最終出力と同じ更新の6画像に、処理段階・serial・入力version・RT descriptor／sRGB・PNG hashを保持します。左右の中間RTもreplayの同じ段階と全RGBA比較し、元RTの次更新による再利用に対する保存の独立性を確認します。[保存段階と検証範囲](Tools/OriginalLiveRendering/INTEGRATION.md#mask描画直後のaccumulation保存) を参照してください。
+
+公開人工入力は **358/358 PASS**、保存実測を含む結合検証は **1840/1840 PASS**（従来から追加20件）。Built-in／URP14で左右の描画後RGBA、6画像の段階・version・descriptor、PNG hash／decode、次更新後の保存不変性を確認しました。
+
+実楽曲も自然終端・Viewer復帰まで完了し、左右Accumulationと最終出力はreplayの対応段階と全RGBA一致しました。保存したM・D・Oから、原作で観測したbyte合成式のRGBと下地alpha保持も全保存画素で再確認しました。同一段階の演算比較であり、原作との同一frame・画像一致には昇格しません。
+
+原作のmask描画後画像と比較するための観測点です。原作camera帰属・TextureMapping・色空間・owner epoch・後段FlipScreenの未確定点と、各false／Unknown判定を維持します。
+
 ## 二channelの自然供給と3分割preview
 
 既存の連続providerへ、明示順序を持つ実楽曲の二channelを接続しました。有効keyの同時選択、同じowner時刻、異なるViewer camera参照を保持し、左右coverage→下地→最終合成を同一更新で観測します。公開人工入力は **338/338 PASS**、保存実測を含む結合検証は **1820/1820 PASS**（従来から追加26件）です。

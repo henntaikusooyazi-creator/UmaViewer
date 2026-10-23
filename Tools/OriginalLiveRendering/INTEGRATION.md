@@ -1,5 +1,28 @@
 # 実Controlによる独立結合検証
 
+## mask描画直後のAccumulation保存
+
+`OriginalLiveChannelEvidence` は既存traceの `RightMaskDrawn` と `LeftMaskDrawn` で、その時点のAccumulationをそれぞれ独立RTへ `Graphics.CopyTexture` します。同じ合成RTの参照を二つ保存する方式ではなく、左描画や次の更新による再利用より前に各copyをGPUへ送ります。既存のcoverage入力・下地・最終出力と合わせ、1更新だけの6画像です。
+
+|trace段階|保存画像|入力version|
+|---|---|---|
+|RightInputUpdated|right-coverage.private.png|1|
+|RightMaskDrawn|right-accumulation.private.png|1|
+|LeftInputUpdated|left-coverage.private.png|2|
+|LeftMaskDrawn|left-accumulation.private.png|2|
+|BasePrepared|base.private.png|2|
+|FinalCompositeDrawn|two-channel.private.png|2|
+
+receiptの各captureにselected serial、submission serial、処理段階、入力version、元／copyのRT ID、descriptor項目（寸法・format・graphicsFormat・sRGB・depth・MSAA・mip・dimension等）、copy時のsRGBWriteを保持します。現在のactiveColorSpaceも記録し、画像書込後にPNG SHA256をreceiptへ結びます。descriptorは実際のViewer RTの情報であり、原作TextureMappingや色空間の証明ではありません。
+
+独立した既存compositorによるreplayで、最終出力に加えて左右それぞれのmask描画後Accumulationも全RGBA比較します。人工入力では、capture後に元RTを別更新でclear・再利用した後も、保存PNGとcapture metadataが保持されることを検証します。runtime renderer・provider・通常UIの処理は変更しません。
+
+追加20件（各pipeline 10件）を含む公開人工入力は **358/358 PASS**、保存実測を含む結合検証は **1840/1840 PASS**。同じAccumulation元IDから異なるcopy IDへの保存、全6画像の同じselected serial／submissionと入力version、source／copy descriptor項目、sRGB、PNG SHA256とdecode寸法、後続clear後の画像・metadata保持を検証しました。
+
+実楽曲の自然終端・Viewer復帰まで確認し、同じ更新の左右描画後Accumulationと最終出力が、それぞれreplayの対応段階と全RGBA一致しました。保存した左描画後RTをM、下地をD、最終出力をOとして、旧原作サンプルで観測した `O.rgb = round((M.rgb*M.a + D.rgb*(255-M.a))/255)` を保存byte空間で独立に再計算し、全保存画素のRGBと下地alpha保持を確認しました。これは処理段階・演算の対応であり、別再生の原作画像との画素一致ではありません。
+
+原作j=0／j=1の保存画像と対応する段階は、coverage入力より後のAccumulationです。coverage入力はメモリ上のARGBFloat copyでreplayしますが、PNG exportはRGBA32 readback（Texture2Dのlinear=true）です。activeColorSpace、RTのsRGB、readbackのlinear設定は別の記録であり、linear-lightや原作と同じ色空間を証明するものではありません。PNGからfloat精度を復元したとは扱いません。原作とViewerの同一frame、camera正式帰属、自然mapping、後段FlipScreen以降の画素一致は別の未確定点です。
+
 ## 二channelの自然再生と同一更新の証拠
 
 公開人工入力は **338/338 PASS**、保存した私有入力を含む試験は **1820/1820 PASS**。追加26件では、明示したinactive-zero policy、Unknownの保持、有効kind 0／別pass／未取得fadeの保留、同一更新のcamera・時刻・shared input version、全RGBA replay、三つのcameraのRGB寄与をBuilt-in／URP14で検証しました。alphaの異なる下地を使い、alpha差が可視寄与へ混ざらないことも確認しています。

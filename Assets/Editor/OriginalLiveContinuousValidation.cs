@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using Gallop.Live;
 using Gallop.Live.Cutt;
 using Gallop.Live.Rendering;
@@ -195,6 +197,61 @@ public static class OriginalLiveContinuousValidation
                             "Destination-alpha changes are excluded from visible base contribution counts.");
                         Check(e.stages.SequenceEqual(Enumerable.Range(0, 7)) && e.sameOwnerPair && e.distinctCameras,
                             "Selection clocks, source camera references and ordered shared-input versions belong to one update.");
+                        Check(e.exactRightAccumulationReplay && e.rightAccumulationDifferentPixels == 0,
+                            "The copied post-right mask accumulation matches independent replay at that exact stage.");
+                        Check(e.exactLeftAccumulationReplay && e.leftAccumulationDifferentPixels == 0,
+                            "The copied post-left mask accumulation matches independent replay at that exact stage.");
+                        Check(e.captures.Count == 6 && e.captures.Select(x => x.stage).SequenceEqual(new[] {
+                            "RightInputUpdated", "RightMaskDrawn", "LeftInputUpdated", "LeftMaskDrawn", "BasePrepared", "FinalCompositeDrawn" }) &&
+                            e.captures.Select(x => x.inputVersion).SequenceEqual(new[] { 1, 1, 2, 2, 2, 2 }) &&
+                            e.captures.All(x => x.selectedSerial == e.selectedSerial && x.submissionSerial == e.submissionSerial),
+                            "Each saved stage carries the same selected update, submission and exact input version.");
+                        var rightMask = e.captures[1]; var leftMask = e.captures[3];
+                        Check(rightMask.sourceId == leftMask.sourceId && rightMask.copyId != leftMask.copyId &&
+                            e.captures.All(x => x.sourceId != x.copyId) && e.captures.Select(x => x.copyId).Distinct().Count() == 6,
+                            "Two versions of the reused accumulation RT are copied into independently owned images.");
+                        Check(e.captures.All(x => JsonUtility.ToJson(x.source) == JsonUtility.ToJson(x.copy) && !x.sRGBWriteAtCopy) &&
+                            !string.IsNullOrEmpty(e.activeColorSpace),
+                            "Source and copy descriptor fields, sRGB and observed color-space state remain explicit.");
+                        Check(rightMask.source.format == "ARGB32" && leftMask.source.format == "ARGB32" &&
+                            !rightMask.source.sRGB && !leftMask.source.sRGB && e.captures.All(x => x.readbackFormat == "RGBA32" && x.readbackLinear),
+                            "Post-blend UNorm storage is separate from the explicitly declared 8-bit linear PNG export.");
+                        string temporary = Path.Combine(Path.GetTempPath(), "OriginalLiveEvidence-" + Guid.NewGuid().ToString("N"));
+                        try
+                        {
+                            evidence.Save(temporary);
+                            bool hashes = true, dimensions = true;
+                            foreach (var capture in e.captures)
+                            {
+                                byte[] png = File.ReadAllBytes(Path.Combine(temporary, capture.png));
+                                using (var sha = SHA256.Create())
+                                    hashes &= capture.pngSha256 == BitConverter.ToString(sha.ComputeHash(png)).Replace("-", "").ToLowerInvariant();
+                                var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+                                try { dimensions &= decoded.LoadImage(png) && decoded.width == capture.copy.width && decoded.height == capture.copy.height; }
+                                finally { Object.DestroyImmediate(decoded); }
+                            }
+                            Check(hashes && File.Exists(Path.Combine(temporary, "channel-evidence.private.json")),
+                                "The receipt binds every completed PNG to its actual file hash.");
+                            Check(dimensions, "All six saved PNGs decode at their recorded descriptor dimensions.");
+                            var rightPng = File.ReadAllBytes(Path.Combine(temporary, rightMask.png));
+                            var leftPng = File.ReadAllBytes(Path.Combine(temporary, leftMask.png));
+                            string capturesBefore = JsonUtility.ToJson(e);
+                            int rendersBefore = opt.RenderCount;
+                            control.AlterUpdate(0); control.AlterLateUpdate();
+                            evidence.Save(temporary);
+                            Check(opt.RenderCount == rendersBefore + 1 && opt.LastTransparentChannels == 3 &&
+                                rightPng.SequenceEqual(File.ReadAllBytes(Path.Combine(temporary, rightMask.png))) &&
+                                leftPng.SequenceEqual(File.ReadAllBytes(Path.Combine(temporary, leftMask.png))),
+                                "Both saved mask images survive the source accumulation being cleared and reused by a later update.");
+                            Check(!rightPng.SequenceEqual(leftPng) && JsonUtility.ToJson(e) == capturesBefore,
+                                "Right and left post-blend images stay distinct and keep their original capture metadata after RT reuse.");
+                        }
+                        finally
+                        {
+                            foreach (var capture in e.captures) File.Delete(Path.Combine(temporary, capture.png));
+                            File.Delete(Path.Combine(temporary, "channel-evidence.private.json"));
+                            if (Directory.Exists(temporary)) Directory.Delete(temporary);
+                        }
                     }
                 }
             }

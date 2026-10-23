@@ -12,6 +12,8 @@
 
 `TraceEmitted` はViewer所有RTへの任意の観測点です。実際の右入力更新→右mask→左入力更新→左mask→下地→最終合成と、同じFrame・camera参照を受け取れます。source cameraや原作プロセスにhookを追加せず、observerなしの既存呼出しも保持します。公開Editor検証器は1frameに限定してGPU入力をコピーし、全RGBA replayとRGB寄与、左右／下地それぞれのcoverage領域を確認します。画像・owner値・instance IDは外部のprivate結果先だけへ保存します。
 
+追加の限定観測では、RightMaskDrawn／LeftMaskDrawnのAccumulationを各描画直後に別RTへcopyします。再利用される合成RTの同じ参照を保持せず、左右それぞれのpost-blend画像を既存coverage・下地・最終画像と同じselected serial／submissionへ結びます。descriptor、sRGB、入力versionとPNG hashを併記し、replayの同じ段階でも全RGBA一致を検証します。原作のmask描画後画像と対応するのはこちらの段階です。保存PNGはRGBA32 readback（Texture2Dのlinear=true）であり、activeColorSpaceやRTのsRGBとは別の設定です。coverageのfloat値の厳密保存や、linear-light・原作の色空間・mappingの証明へ拡張しません。
+
 ## 連続供給の明示登録
 
 `OriginalLiveContinuousProvider` は、ロード済みControl、確認済みprofile、authored trackと一致する明示bindingを受け取ります。Controlの実 `AlterUpdate`／`AlterLateUpdate` をそのまま利用し、保存した時刻配列やViewerFrameからの推測時刻は供給しません。providerの `FrameReady` には同じ更新のimmutableなSelectionと解決済みSnapshotが届きます。
