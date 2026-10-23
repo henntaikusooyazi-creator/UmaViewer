@@ -1,8 +1,18 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-23。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-24。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## Resolveから右maskまでの描画内容を採取
+
+内部owner時刻で同期した新しい限定runで、対象Resolveから右mask消費までに観測した **7 draw** と消費maskを保存しました。各drawのshader名・参照texture・pixel shader定数・sampler・描画前後の画素gridを、同じ区間のAPI記録へ照合しています。従来の「4回」は共有入力RTに直接触れた描画の数で、途中RT上の描画を含む全pass数ではありませんでした。
+
+拡散系の名前を持つ2 draw、bloom系の3 draw、複数入力を持つ拡散系の1 draw、入力RTへの書戻し1 drawを観測しました。保存gridでは各描画のRGB変化を確認し、最後の書戻しは同じ整数画素位置の入力・出力が一致しました。shader名だけで実bytecodeやpass番号を確定せず、全画素の演算一致へは広げません。[保存範囲と不足入力](Tools/OriginalLiveRendering/INTEGRATION.md#resolveから右maskまでの描画内容) を参照してください。
+
+最終runはStopCompleted、hook復元・drain・pin照合・保持handle復旧・通常終了後の所有配備復元が成立しました。採取器の閉鎖検証 **796/796**、関連受信側 **57/57** がPASSです。途中runの元Pendingと、過去のViewer **376/376・1868/1868** は独立して保持します。今回の公開変更は文書のみです。
+
+描画キュー位置・全writerのcamera帰属、実bytecodeの同定、頂点側補間、depth画素と自然なRGB入力供給は未確定です。既存rendererのRGB処理は保持し、`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
 
 ## 内部データによる採取同期
 
@@ -10,7 +20,7 @@
 
 歌詞データにはミリ秒の時刻表があり、Viewerの既存処理は同じライブ時刻をtimeline更新と歌詞表示へ渡しています。字幕を画面から読み取る必要はありません。ただし、原作の歌詞表示が使うclockと音声epoch、原作とViewerの時刻原点まで確定した結果ではありません。[内部同期の範囲](Tools/OriginalLiveRendering/INTEGRATION.md#内部時刻と歌詞時刻表による同期) を参照してください。
 
-内部同期の成功runと、後処理の追加採取は別判定です。後者は記録が1件に留まり、内部slotの前後一致も不成立だったため、元のPendingを保持します。hook解除・drain・個別pin照合や、正常終了後の所有配備復元を、4後処理の受入成功へ読み替えません。
+前回の内部同期成功runと、その時点の後処理追加runは別判定です。後者は記録が1件に留まり、内部slotの前後一致も不成立だったため、元のPendingを保持します。今回の新しい区間採取の成功によって、過去runの判定を変更しません。
 
 採取器と実値はローカル専用で、今回の公開変更は説明文書のみです。既存のViewer renderer・通常UI・歌詞処理を変更せず、過去のPendingと `OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
 
@@ -18,7 +28,7 @@
 
 原作の新しい限定runで、右Resolve前の保存writer4件を、一意のrender-task・保持context・同じrunの右receiverのcameraへ接続しました。左右の自然readerと消費drawも同じ実更新で取得しました。同じResolveが二つのcamera記録へ付いていても、独立した二観測には数えません。
 
-ただし、Resolveから右mask drawまでに4回の後処理があり、入力RTへの書戻しも観測しました。**保存writerのcamera帰属は成立、Resolve結果の無変更消費は不成立**です。保存されたresource参照の経路は追えますが、後処理の全writer・camera・実画素寄与は未証明です。後続の左Resolveへ右versionを流用しません。[段階別の判定](Tools/OriginalLiveRendering/INTEGRATION.md#右resolve前writerのcamera帰属と後処理) を参照してください。
+当時の記録では、Resolveから右mask drawまでに共有入力RTへ直接関わる4 drawと書戻しを観測しました。上記の新しい区間採取は途中RTの描画も含む7 drawを保存しています。**保存writerのcamera帰属は成立、Resolve結果の無変更消費は不成立**です。後処理の全writer・camera帰属は未証明で、後続の左Resolveへ右versionを流用しません。[段階別の判定](Tools/OriginalLiveRendering/INTEGRATION.md#右resolve前writerのcamera帰属と後処理) を参照してください。
 
 字幕の背景依存を通常再生で再現し、判定基準と待機時間を保ったままmaskを追加画像で資格化しました。別の通常再生と実採取で同期を確認しました。採取中に判明したcamera ID位置とcallback／task／reader順序の誤りも訂正し、隣接値・欠落・重複・未完了の負例を追加しました。最終native閉鎖検証630/630、字幕36件、補助24件は独立した検証であり、Viewerの376/376・1868/1868へ加算しません。
 

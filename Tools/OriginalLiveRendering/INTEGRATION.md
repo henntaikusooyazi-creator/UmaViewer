@@ -1,5 +1,28 @@
 # 実Controlによる独立結合検証
 
+## Resolveから右maskまでの描画内容
+
+新しい限定runは内部owner時刻で開始し、対象Resolveから実際の右mask API呼出しまでの描画を保存しました。途中RTのwriterも対象に含め、従来のresource watch集合は変更していません。保存した観測対象のDraw／DrawIndexedは7件で、消費maskを区間終端として別に保持しています。以前の「4回」は共有入力RTへ直接関わる観測であり、後処理全体のpass数を確定したものではありません。
+
+| 区間内の順序 | 観測内容 |
+| --- | --- |
+| 1–2 | 拡散系のshader名を持つ描画と途中RT |
+| 3–5 | bloom系のshader名を持つ描画と途中RT |
+| 6 | 拡散系のshader名、depthを含む複数texture参照 |
+| 7 | 入力RTへの書戻し。保存gridで入力・出力RGBAが一致 |
+
+各描画で実際のVS／PS参照と名前、texture参照・descriptor、pixel shader定数の限定範囲、sampler、viewport、blend、入力と出力の描画前後gridを保存しました。GPU copyを各描画の前後に発行し、Mapは観測したPresentの完了後に行います。RTの次の再利用が保存内容を上書きしない条件です。元の整数画素中心を保持し、解像度が違うgrid同士は直接の画素一致と扱いません。
+
+対象Resolve、順序付きAPI記録、同じcontext、実際の右mask呼出しを含む時間範囲、入力RTへの最後の書戻しを照合しました。各描画の保存gridでRGB変化を確認し、書戻しから消費までに対象入力への別の観測済みwriteがないことも確認しています。これは限定したAPI・画素範囲の結果です。全画素の演算一致、全writerの帰属、shader名からのbytecode同定は未証明です。
+
+描画キュー位置は取得できず、各記録の該当診断をUnknownとして保持しています。画素取得の成否とは別判定であり、今回の7 drawを既存のcamera帰属証拠へ自動的に結合しません。保存された拡散系・bloom系shader候補では、pixel shaderが参照する定数範囲を今回の保存でカバーできました。ただし、実際のbytecode／variant、頂点側の変換・補間、depth画素は不足しています。既存の `OriginalCameraProducer` はcamera scripts／effect componentsを複製しないpreviewで、この後処理列の自然なRGB供給は未接続です。
+
+採取条件をCPU側の選択フラグへ依存させた初期版は対象を取り逃がしました。GPUの消費開始をCPUの選択時刻とみなす診断も採用せず、区間内保存と後段のAPI照合へ分け、選択が途中で変わる閉鎖試験を追加しています。別の途中版では診断fieldを既存の厳格なqualification schemaへ追加して受信拒否されました。診断値を独立sidecarへ移し、既存schemaを保持する保存receipt replayを追加しました。初期slotから対象時刻までの変化も記録し、ロード用の有限待機をARM前に置いてから、元の前後一致条件を満たす新しいrunを実行しました。待機時間をcueや音声epochの代用にはしません。
+
+最終runは元controllerでStopCompleted／保持handleによる復旧、正常worker終了、hook復元・drain・pin照合、通常ゲーム終了後の所有配備復元が成立しました。採取器の閉鎖検証は **796/796 PASS**、関連受信側は **57/57 PASS** で、変更した受信moduleの分岐計測は100%です。以前のrunのPendingは変更しません。
+
+公開差分は説明文書のみです。原作値・shader binary・native採取コード・receiptはローカル専用に保持します。Viewerの376/376・1868/1868、自然再生の成功は今回再実行せず、別の成果として保持します。自然TextureMapping、owner epoch、中央下地camera、後段表示処理、原作対Viewerの同一frame・最終画素一致と各false判定は未確定のままです。
+
 ## 内部時刻と歌詞時刻表による同期
 
 Viewerの既存loaderは楽曲の歌詞時刻表をミリ秒から秒へ読み込み、`Director` は同じライブ時刻をtimelineの `AlterUpdate` と歌詞の `UpdateLyrics` へ渡しています。歌詞本文を画面から認識する経路は不要です。選択した原作データでも時刻表の存在と時刻の非減少を確認しました。本文・時刻表・実値は公開repoへ含めません。
@@ -16,7 +39,7 @@ Viewerの既存loaderは楽曲の歌詞時刻表をミリ秒から秒へ読み�
 
 同じrunの右receiverと解決済みRTを先行更新で確認し、最初の次更新だけを対象にしました。準備段階のResolveやPresentを対象へ混ぜず、別更新へ観測枠を延長しません。実測順序はcallback→task→reader→Resolve→mask drawであり、task完了を保存readerの開始と比較します。同じResolveが二つのcamera記録へ添付される重複は除きます。
 
-Resolve後から右mask drawまでに4回の後処理があり、別RTを経由した入力RTへの書戻しを観測しました。保存されたsource／destination参照には、対象Resolveから中間RT・書戻し・右mask入力へ至る経路があります。ただし中間RTの全writerを監視したものではなく、shaderが各参照を実画素へ寄与させた証明でもありません。**Resolve版を無変更で消費したという旧判定はfalseのまま保持**します。後続の左Resolveは別versionであり、右側の経路を継承させません。resource経路の検査には無関係な上書き・clear・未完了による経路切断の負例も含めました。
+当時はResolve後から右mask drawまでに、共有入力RTへ直接関わる4 drawと、別RTを経由した入力RTへの書戻しを観測しました。後続の区間採取では途中RT上の描画も含めて7 drawを保存しています。保存されたsource／destination参照には、対象Resolveから中間RT・書戻し・右mask入力へ至る経路があります。全writerのcamera帰属や、各入力の全画素への寄与は未証明です。**Resolve版を無変更で消費したという旧判定はfalseのまま保持**します。後続の左Resolveは別versionであり、右側の経路を継承させません。resource経路の検査には無関係な上書き・clear・未完了による経路切断の負例も含めました。
 
 最初の未ARM起動は元のPendingを保持しています。その後、通常再生で字幕の黒縁maskの背景依存を再現しました。追加の目視確認画像との共通部分へ限定し、白文字mask・一致基準・待機時間を変えず、別の通常再生で二つの字幕遷移と時刻区間の整合を確認しました。旧失敗のスコアを後から復元した結果ではありません。
 
