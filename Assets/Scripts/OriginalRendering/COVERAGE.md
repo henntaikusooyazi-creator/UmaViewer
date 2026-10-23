@@ -61,6 +61,8 @@ rendererの既存constructorは従来どおりARGB32です。保存中間画像�
 
 Unity D3D11で、独立した数式との比較、ST・Y反転・UV clipping・fade・非ゼロw・入力alpha無視、同じRTを使う右→左→FinalCompositeを検証しました。保存済み同一runのmask値とUV入力から生成したcoverageも、実測alphaと照合しています。少数のサンプルに1/255差が残るため、元shaderとのbit単位の同一性は主張しません。
 
-従来の保存RGBA replayは引き続き全サンプル一致しています。通常ライブでの自然cueやcameraの帰属は未接続です。
+従来の保存RGBA replayは引き続き全サンプル一致しています。原作cameraの正式帰属と原作からの自然mapping供給は未接続です。
+
+追加のEditor検証では、保存された同一drawのUV宣言・vertex・ST・TexelSize.y・評価済み描画値を明示入力し、元RTの整数画素中心に対応する有限gridで描画後alphaを比較できます。左描画は保存右alphaを下地へ使い、右描画前の内容を推測しません。RGBとsample biasは人工入力で、原作のcamera映像・MipBias・投影契約・自然mapping streamは確定しません。[比較入力と制約](../../../Tools/OriginalLiveRendering/INTEGRATION.md#保存drawのmask-alpha比較) を参照してください。
 
 `OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`。

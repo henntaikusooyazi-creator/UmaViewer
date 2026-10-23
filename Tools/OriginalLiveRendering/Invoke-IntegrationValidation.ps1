@@ -4,7 +4,8 @@ param(
     [string] $ConfirmedProducerProfile,
     [string] $ConfirmedOwnerClock,
     [string] $ConfirmedNaturalCue,
-    [string] $ConfirmedNaturalFade
+    [string] $ConfirmedNaturalFade,
+    [string] $ObservedMaskAlpha
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -42,6 +43,13 @@ try {
     if ($ConfirmedNaturalFade) {
         $fade = (Resolve-Path -LiteralPath $ConfirmedNaturalFade).Path
         $arguments += @('-confirmedNaturalFade', ('"' + $fade + '"'))
+    }
+    if ($ObservedMaskAlpha) {
+        $alpha = (Resolve-Path -LiteralPath $ObservedMaskAlpha).Path
+        if ($alpha.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Keep observed mask-alpha inputs outside the repository.'
+        }
+        $arguments += @('-observedMaskAlpha', ('"' + $alpha + '"'))
     }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()

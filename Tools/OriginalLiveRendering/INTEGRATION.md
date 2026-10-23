@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 保存drawのmask alpha比較
+
+`Invoke-IntegrationValidation.ps1 -ObservedMaskAlpha <repo外のJSON>` は、限定された外部alpha観測をEditorだけの比較へ渡します。通常のrenderer・provider・楽曲再生・UIは変更しません。原作画像や実値を公開repoへ保存しません。
+
+入力は元RTの `width`／`height`、有限gridの `gridWidth`／`gridHeight`、明示した `flipGridY`、`right`／`left` の評価済みdraw、`rightAlpha`／`leftAlpha` のbyte整数配列です。各drawは `transform`、`scaleOffset`、`meshUvScaleOffset`、`texelSizeY`、`thickness`、`fade` を指定します。配列は入力gridの行順です。寸法・配列長・byte範囲・有限値を検査してからGPU資源を確保します。これは原作のraw解析器ではなく、呼出し側で同一drawへの帰属を確認した明示入力です。
+
+各grid位置は `floor((2*i+1)*sourceSize/(2*gridSize))` の元整数画素を参照し、その中心で描画結果を読みます。`flipGridY` は入力policyであり、実測への一致が最大になる向きを自動選択しません。原作の投影matrixやcamera帰属が未取得なら、それを解決したとは扱いません。
+
+右の比較は初期alpha 0を明示します。左は保存された右alphaをPoint textureとして既存の `CapturedPostBlendLayer` 経路で配置し、その上に生成した左coverageを描きます。左の比較は原作の右draw前の内容を推測しません。観測済みalpha加算はOne／Oneであり、RGBのSrcAlpha／InvSrcAlpha式をalphaへ適用しません。
+
+sample用RGBとbiasは試験用の明示値です。原作MipBiasは未取得のまま保持し、RGBや色空間の一致を判定しません。異なる人工RGBA／biasでも同じalphaになることを検証します。receiptはalpha限定、右のclear policy、投影契約未成立、原作bias未取得、各false判定を記録します。
+
+公開人工入力 **376/376 PASS**（追加18件）、保存実測を含む結合検証 **1868/1868 PASS**（追加28件）。元画素中心、明示UV/ST/Y反転、保存右alphaからの左描画、入力RGBA／bias非依存、誤ったgrid方向の検出、入力境界をBuilt-in／URP14で確認しました。保存した原作drawとの比較では右は最大1byte差、左は一致しました。新しい原作runや自然ライブの長時間再生は実施していません。原作の同一frame・camera RGB・全画素一致、自然mapping供給、owner epochは未確定です。
+
 ## mask描画直後のAccumulation保存
 
 `OriginalLiveChannelEvidence` は既存traceの `RightMaskDrawn` と `LeftMaskDrawn` で、その時点のAccumulationをそれぞれ独立RTへ `Graphics.CopyTexture` します。同じ合成RTの参照を二つ保存する方式ではなく、左描画や次の更新による再利用より前に各copyをGPUへ送ります。既存のcoverage入力・下地・最終出力と合わせ、1更新だけの6画像です。

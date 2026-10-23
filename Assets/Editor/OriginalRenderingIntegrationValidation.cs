@@ -34,6 +34,8 @@ public static class OriginalRenderingIntegrationValidation
         public string naturalCueSource = "NotProvided";
         public int naturalFadeChecks, naturalFadeRows, naturalFadeBuiltinFrames, naturalFadeUrpFrames;
         public int continuousProviderChecks;
+        public int maskAlphaChecks;
+        public OriginalMaskAlphaValidation.Receipt[] maskAlpha = new OriginalMaskAlphaValidation.Receipt[2];
         public string naturalFadeSource = "NotProvided";
         public List<CameraSelectionSample> cameraSelection = new List<CameraSelectionSample>();
         public List<DrawProviderSample> drawProvider = new List<DrawProviderSample>();
@@ -95,6 +97,7 @@ public static class OriginalRenderingIntegrationValidation
         public OwnerClockSample[] samples;
     }
     static NaturalFadeData naturalFadeData;
+    static string observedMaskAlphaPath;
     static float FromBits(int bits) => BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
     static int FloatBits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
     static readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
@@ -249,8 +252,10 @@ public static class OriginalRenderingIntegrationValidation
                 result.naturalFadeSource = "SyntheticPositiveFadeInputs";
             }
             result.naturalFadeRows = naturalFadeData.samples.Length;
+            int alphaArg = Array.IndexOf(args, "-observedMaskAlpha");
+            observedMaskAlphaPath = alphaArg >= 0 ? args[alphaArg + 1] : null;
             ExerciseConfirmedMath(); ExerciseOwnerClockMath(); ExerciseThicknessMath(); Exercise(false); Exercise(true);
-            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks - result.naturalCueChecks - result.naturalFadeChecks;
+            result.baselineChecks = result.checks - result.cameraSelectionChecks - result.thicknessMathChecks - result.drawProviderChecks - result.confirmedProducerChecks - result.ownerClockChecks - result.naturalCueChecks - result.naturalFadeChecks - result.maskAlphaChecks;
             result.status = "ActualControlIntegrationGPUValidated_TestOnly";
         }
         catch (Exception e) { result.status = "Failed"; result.failure = e.ToString(); Debug.LogException(e); }
@@ -362,6 +367,9 @@ public static class OriginalRenderingIntegrationValidation
             int continuousChecks = OriginalLiveContinuousValidation.Exercise();
             result.continuousProviderChecks += continuousChecks;
             result.checks += continuousChecks;
+            int alphaStart = result.checks;
+            result.maskAlpha[urp ? 1 : 0] = OriginalMaskAlphaValidation.Exercise(urp, observedMaskAlphaPath, Check);
+            result.maskAlphaChecks += result.checks - alphaStart;
         }
         finally
         {

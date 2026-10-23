@@ -4,6 +4,14 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 保存された原作drawとのmask alpha比較
+
+原作の同一drawに属する入力宣言・index／vertex・定数upload・描画後画像を照合し、選択したdrawのUV/STとY反転条件を既存adapter→coverage→GPUへ明示入力しました。新しいEditor検証器は元RTの整数画素中心を保持して有限gridを読み、原作の描画後alphaと比較します。画像をgrid解像度へ縮小して描き直す方法とは区別します。
+
+公開人工入力は **376/376 PASS**、保存実測を含む結合検証は **1868/1868 PASS**。Built-in／URP14で、右は明示した初期alpha 0のpolicy下で最大1byte差、左は保存した原作の右alphaを下地として一致しました。RGB・入力alpha・試験用sample biasを変えても比較alphaが変わらないこと、誤ったgrid方向を検出することも確認しました。新しい原作runは不要でした。
+
+これは選択したdrawのmask alpha比較です。RGBは人工入力で、元のMipBias、画面座標からmesh UVへの正式な投影契約、camera帰属、自然mapping stream、owner epochを確定しません。今回のsourceでは自然ライブの長時間再生を再実施していません。既存の自然再生成果とは別に保持します。[入力形式と比較の境界](Tools/OriginalLiveRendering/INTEGRATION.md#保存drawのmask-alpha比較) を参照してください。
+
 ## 左右mask描画後の中間RT採取
 
 既存の限定Editor観測へ、RightMaskDrawn／LeftMaskDrawn直後のAccumulation copyを追加しました。左右coverage・下地・最終出力と同じ更新の6画像に、処理段階・serial・入力version・RT descriptor／sRGB・PNG hashを保持します。左右の中間RTもreplayの同じ段階と全RGBA比較し、元RTの次更新による再利用に対する保存の独立性を確認します。[保存段階と検証範囲](Tools/OriginalLiveRendering/INTEGRATION.md#mask描画直後のaccumulation保存) を参照してください。
