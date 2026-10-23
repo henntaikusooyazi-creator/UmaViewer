@@ -14,7 +14,7 @@ foreach ($directory in @('Assets/Runtime', 'Assets/Editor', 'Assets/Shaders', 'P
 # Only the engine-facing components are compiled here. The real timeline integration
 # belongs to the full Viewer build; this project does not replace it with mock types.
 foreach ($name in @('OriginalMultiCameraRenderer', 'OriginalMaskCoverageGenerator',
-        'OriginalCompositeCueAdapter', 'OriginalCompositeProducerMath', 'OriginalCameraProducer')) {
+        'OriginalCompositeCueAdapter', 'OriginalCompositeProducerMath', 'OriginalCameraProducer', 'OriginalPostProcessChain')) {
     foreach ($suffix in @('.cs', '.cs.meta')) {
         Copy-Item -LiteralPath (Join-Path $repo "Assets/Scripts/OriginalRendering/$name$suffix") -Destination (Join-Path $target 'Assets/Runtime')
     }
@@ -25,6 +25,8 @@ foreach ($name in @('OriginalMultiCamera', 'OriginalMaskCoverage')) {
     }
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Validation/OriginalRenderingValidation.cs') -Destination (Join-Path $target 'Assets/Editor')
+Copy-Item -LiteralPath (Join-Path $repo 'Assets/Editor/OriginalPostProcessValidation.cs') -Destination (Join-Path $target 'Assets/Editor')
+Copy-Item -LiteralPath (Join-Path $repo 'Assets/Shaders/OriginalRenderingValidation/OriginalPostProcessValidation.shader') -Destination (Join-Path $target 'Assets/Shaders')
 foreach ($name in @('LiveDiagonalCompositeTestOnly.cs', 'LiveDiagonalCompositeTestOnly.shader')) {
     $directory = if ($name.EndsWith('.cs')) { 'Assets/Runtime' } else { 'Assets/Shaders' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Validation/Legacy/$name") -Destination (Join-Path $target $directory)

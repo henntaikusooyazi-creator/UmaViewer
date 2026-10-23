@@ -23,6 +23,13 @@ namespace Gallop.Live.Rendering
         public OriginalCompositeCueAdapter.Unresolved LastUnresolved { get; private set; }
         public int LastTransparentChannels { get; private set; }
 
+        public void SetInputPostProcessor(IOriginalCameraPostProcessor processor)
+        {
+            if (disposed) throw new ObjectDisposedException(nameof(OriginalLiveContinuousRenderer));
+            if (rendering) throw new InvalidOperationException("Cannot change a rendering renderer.");
+            cameras.SetInputPostProcessor(processor);
+        }
+
         public readonly struct Trace
         {
             public readonly OriginalLiveTimelineBridge.Frame Selected;

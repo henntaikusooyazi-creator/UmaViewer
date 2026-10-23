@@ -13,7 +13,9 @@ namespace Gallop.Live.Rendering
         readonly Camera renderCamera;
         RenderTexture shared, backdrop;
         bool disposed, rendering;
-        public RenderTexture SharedInput => shared;
+        IOriginalCameraPostProcessor inputPostProcessor;
+        RenderTexture lastInput;
+        public RenderTexture SharedInput => lastInput ? lastInput : shared;
         public RenderTexture Backdrop => backdrop;
         public int RenderCount { get; private set; }
         public string LastBackend { get; private set; }
@@ -26,8 +28,14 @@ namespace Gallop.Live.Rendering
             catch { Dispose(); throw; }
         }
         public RenderTexture RenderBase(Camera source) => Render(source, backdrop);
-        public RenderTexture RenderInput(Camera source) => Render(source, shared);
-        RenderTexture Render(Camera source, RenderTexture output)
+        public void SetInputPostProcessor(IOriginalCameraPostProcessor processor)
+        {
+            if (disposed) throw new ObjectDisposedException(nameof(OriginalCameraProducer));
+            if (rendering) throw new InvalidOperationException("Cannot change a rendering producer.");
+            inputPostProcessor = processor; lastInput = null;
+        }
+        public RenderTexture RenderInput(Camera source) => Render(source, shared, true);
+        RenderTexture Render(Camera source, RenderTexture output, bool processInput = false)
         {
             if (disposed) throw new ObjectDisposedException(nameof(OriginalCameraProducer));
             if (!source) throw new ArgumentNullException(nameof(source));
@@ -51,7 +59,15 @@ namespace Gallop.Live.Rendering
                     LastBackend = "URP.SingleCameraRequest";
                 }
                 else throw new NotSupportedException("This explicit camera producer supports Built-in and URP.");
-                RenderCount++; return output;
+                RenderCount++;
+                if (processInput)
+                {
+                    var result = inputPostProcessor == null ? output : inputPostProcessor.Process(source, output);
+                    if (!result || !result.IsCreated() || result.width != output.width || result.height != output.height)
+                        throw new InvalidOperationException("Postprocessor must return a created target of the camera input size.");
+                    lastInput = result; return result;
+                }
+                return output;
             }
             finally { renderCamera.targetTexture = null; RenderTexture.active = active; GL.sRGBWrite = srgb; rendering = false; }
         }
@@ -73,7 +89,7 @@ namespace Gallop.Live.Rendering
             if (rendering) throw new InvalidOperationException("Cannot dispose a rendering camera producer.");
             if (shared) { shared.Release(); Destroy(shared); shared = null; }
             if (backdrop) { backdrop.Release(); Destroy(backdrop); backdrop = null; }
-            Destroy(cameraObject); disposed = true;
+            inputPostProcessor = null; lastInput = null; Destroy(cameraObject); disposed = true;
         }
     }
 }

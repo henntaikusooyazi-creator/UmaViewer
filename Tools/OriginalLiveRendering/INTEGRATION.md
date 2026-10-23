@@ -1,5 +1,28 @@
 # 実Controlによる独立結合検証
 
+## 明示した後処理chainの接続とRGB比較
+
+`IOriginalCameraPostProcessor.Process(Camera, RenderTexture)` は、その回のViewer camera出力を受け取る追加の明示経路です。`OriginalCameraProducer.SetInputPostProcessor`、または `OriginalLiveContinuousRenderer.SetInputPostProcessor` へ登録します。左右inputの描画後に呼ばれ、下地には適用しません。返却RTは作成済みでcamera入力と同じ大きさである必要があります。`null` の登録で解除できます。producerは登録先の所有権を持ちません。呼出し側が解除後にdisposeしてください。
+
+汎用実装 `OriginalPostProcessChain` は1〜16 passを受け付けます。各 `Pass` にはMaterial、shader pass、出力サイズ、任意のMeshとtexture bindingを明示します。Meshを与えると保存頂点による描画、与えないとBlitを使用します。`Binding.Stage` は `-1` が今回のcamera入力、`-2` が明示external texture、0以上が先行passの出力です。先方参照・自己参照、解放済み入力、再入、所有出力と入力のaliasを拒否します。中間RTはlinear ARGB32で、shader・sampler・投影・色空間の解釈は呼出し側の責任です。Material／Mesh／external textureは呼出し側が所有し、chainは中間RTだけを解放します。登録だけで原作shader、camera、depth、clockとの対応は成立しません。
+
+公開人工試験は、実camera出力→サイズの異なる中間RT→複数入力の最終passをBuilt-in／URP14で実行しました。中間UNorm書込みを含む人工式とのRGB比較、alpha、中央下地の迂回、解除、fault／再入、RT／sRGB状態復元、caller所有物の保持を確認し、**32/32 PASS、4096画素** です。人工RGB式の許容差は最大1 byteであり、以下の原作保存入力の完全一致とは別判定です。既存の公開結合試験も今回 **376/376 PASS** になりました。
+
+私有の追加採取では、7 draw全てについて以下を同じrun・context・描画区間へ接続しました。
+
+- VS／PSの束縛buffer全体と、独立した従来snapshotとの一致。
+- 実draw-helper内の頂点宣言、実IA layout参照、indexed引数、vertex／index buffer。POSITIONとUVは実宣言から解釈し、strideから推測しません。
+- 入力textureの原寸・format・samplerと限定領域。depthの実float入力も保存。
+- draw直後の整数画素領域。GPU copyをその場で発行し、Mapは観測済みPresent後に行います。
+
+同じbuildの私有program候補を、元命令のbit表現、保存全定数、実頂点とUV、sampler、元解像度のviewportで公開chainへ渡しました。readbackのrow／channel配置を人工gradientで独立に較正し、画素合わせのためのY反転・epsilon・丸め補正は加えていません。各drawの保存入力からの **896/896 RGBA一致**、前段の生成結果を接続した最後の **128/128 RGBA一致** を得ました。非一様・非ゼロの参照領域です。sample footprintの保存範囲内判定と、前段の無効領域を伝播する別GPU描画でも、比較領域の無効sampleは0でした。明示stage graphと独立保持した中間RT列も一致しています。
+
+この比較はBuilt-in D3D11の限定領域です。最後の書戻し候補は、この入力・定数・頂点に対する動作が一致しましたが、実shader生成APIとの同一run identityは未確定です。候補の静的定数参照の不足は解消しましたが、全variantや未観測状態までは保証しません。入力の保存領域外は未検証で、原作shader・HLSL由来コード・実定数・vertex・画像・native採取器は私有です。通常のViewer camera RGB、自然なdepth／program／定数の連続供給、音声epoch、左右と中央全体の原作画素一致は別の未完了事項として保持します。
+
+最終runはStopCompletedと保持handleによる復旧、hook復元・drain・pin照合、正常ゲーム終了後の所有配備復元まで確認しました。最終採取器の閉鎖試験は **877/877 PASS**。重複する早期shader採取を外した構成なので、以前の1006件からの差を件数だけで非退行判定しません。途中版はdeferred入力未完了、setter quotaによるcallback欠落、実頂点宣言数に対する読取quota不足を個別に保存し、callback枠の分離、最大宣言を含む境界試験、全入力完了を要求する終了述語へ修正しました。最終7/7入力が揃った後にGPU比較へ進めています。旧Pendingは変更しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## 実shader生成との同一run照合
 
 限定した候補集合について、原作のshader生成APIへ渡されたbytecodeを全byte比較しました。生成APIの正常終了、返却objectの取得、そのobjectの保持、実drawにおける同じobject参照、生成がdrawより先であることを照合しています。保持により、解放後のobjectアドレス再利用を同一shaderと誤認することを防ぎます。候補の長さ・名前・別runの参照だけでは採用しません。

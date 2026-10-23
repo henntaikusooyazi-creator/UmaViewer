@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 後処理の明示接続と保存RGB比較
+
+`OriginalPostProcessChain` を追加し、明示したMaterial・Mesh・texture参照から複数段の中間RTを生成できるようにしました。`OriginalCameraProducer.SetInputPostProcessor` と連続rendererの同名APIで、camera描画後・mask入力前へ接続します。未登録時の経路と中央下地の描画は従来どおりです。通常ライブへの自動登録は行いません。
+
+新しい原作runでは、7 drawの全定数buffer、実頂点宣言・vertex/index、入力画像の限定領域、depth、描画直後の参照領域が揃いました。私有の候補programをこの公開chainで実行し、各drawの保存入力による **896/896画素のRGBA一致** と、7段を連続生成した最後の **128/128画素のRGBA一致** を確認しました。後者は最終drawと同じ参照領域の再評価で、独立した原作観測ではありません。参照範囲外のsampleと前段からの無効入力伝播も比較領域では0です。
+
+最後の書戻しを含め、候補VSの静的定数参照を全て保存範囲内へ収め、実頂点と補間を使用した限定RGB再現が成立しました。ただし、最後のVS／PSをshader生成APIへ同一runで結ぶidentityは引き続きUnknownです。RGB一致からbytecode／variantの一意性を確定しません。これはWindows D3D11の保存領域の再描画であり、全画面・連続時刻・自然depth／定数供給や、原作camera映像そのものの生成一致は未証明です。
+
+公開人工GPU試験はBuilt-in／URP14合計 **32/32 PASS、4096画素**。既存公開結合試験も現コードで **376/376 PASS** です。私有RGB試験はBuilt-in D3D11で実行しました。過去の1868件・142秒自然再生を今回の実行件数へ加算しません。最終採取runはStopCompleted、保持handle復旧・hook復元・drain・pin照合・通常終了後の所有配備復元を確認しました。途中の入力不足runと過去Pendingは別記録を保持します。
+
+公開するのは汎用接続、人工shader・検証、説明だけです。原作program・入力値・画像・採取コード・receiptは公開repoへ含めません。[接続方法と比較条件](Tools/OriginalLiveRendering/INTEGRATION.md#明示した後処理chainの接続とrgb比較) を参照してください。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## 後処理の実shader生成と描画参照を接続
 
 原作のshader生成APIへ渡された候補bytecodeを全byte比較し、成功時に返ったshader objectを保持して、同じrunの実drawが参照したVS／PSへ照合しました。shader名や異なるrunのポインタ一致による推定は使っていません。
