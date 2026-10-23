@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 内部データによる採取同期
+
+原作側の採取開始を、字幕画像の照合から、同じownerの内部時刻・cue比較値を確認する有限待機へ切り替えました。対象到達時にはowner、選択receiver、cue比較値、setter前後の時刻安定性を照合します。描画hookの有効化で区間が進むことを実測したため、手前の内部checkpointで準備し、対象では採取受付だけを開始します。この方式で左右の消費drawを実機取得し、正常停止・hook復元・保持handleによる復旧を確認しました。
+
+歌詞データにはミリ秒の時刻表があり、Viewerの既存処理は同じライブ時刻をtimeline更新と歌詞表示へ渡しています。字幕を画面から読み取る必要はありません。ただし、原作の歌詞表示が使うclockと音声epoch、原作とViewerの時刻原点まで確定した結果ではありません。[内部同期の範囲](Tools/OriginalLiveRendering/INTEGRATION.md#内部時刻と歌詞時刻表による同期) を参照してください。
+
+内部同期の成功runと、後処理の追加採取は別判定です。後者は記録が1件に留まり、内部slotの前後一致も不成立だったため、元のPendingを保持します。hook解除・drain・個別pin照合や、正常終了後の所有配備復元を、4後処理の受入成功へ読み替えません。
+
+採取器と実値はローカル専用で、今回の公開変更は説明文書のみです。既存のViewer renderer・通常UI・歌詞処理を変更せず、過去のPendingと `OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## 右Resolve前writerのcamera帰属と後処理
 
 原作の新しい限定runで、右Resolve前の保存writer4件を、一意のrender-task・保持context・同じrunの右receiverのcameraへ接続しました。左右の自然readerと消費drawも同じ実更新で取得しました。同じResolveが二つのcamera記録へ付いていても、独立した二観測には数えません。

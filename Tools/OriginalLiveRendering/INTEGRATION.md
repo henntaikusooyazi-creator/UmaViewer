@@ -1,5 +1,15 @@
 # 実Controlによる独立結合検証
 
+## 内部時刻と歌詞時刻表による同期
+
+Viewerの既存loaderは楽曲の歌詞時刻表をミリ秒から秒へ読み込み、`Director` は同じライブ時刻をtimelineの `AlterUpdate` と歌詞の `UpdateLyrics` へ渡しています。歌詞本文を画面から認識する経路は不要です。選択した原作データでも時刻表の存在と時刻の非減少を確認しました。本文・時刻表・実値は公開repoへ含めません。
+
+原作の限定採取では、字幕画像による開始条件を、内部ownerとcue比較値による条件へ置き換えました。clockだけを確認する有限待機から、手前の内部checkpointで描画観測を準備し、その後も同じownerを待って対象到達時に採取受付を開始します。owner変更・逆行・対象超過・上限・timeoutを拒否し、選択receiverの配列帰属、実owner比較値とcueの一致、setter前後の安定性を確認します。準備完了が対象より前であることと、対象から採取受付への移行も独立に検証します。Viewer frameや壁時計から原作時刻を推測していません。
+
+実機で内部条件による開始、左右の消費draw、元controllerによる正常停止・hook復元・drain・pin照合・保持handle復旧を確認しました。これは原作の歌詞表示clock、音声epoch、最終表示frame、原作対Viewerの時刻原点の証明ではありません。既存Viewerの歌詞処理やrendererは変更していません。各false／Unknown、過去のPendingを維持します。
+
+別の後処理追加runは、記録が1件に留まり、内部slotの前後一致も不成立でした。hook解除・drain・個別pin照合が成立しても、元controllerのPendingは維持します。4後処理のshader／binding／画素変換を一式取得した結果にはしません。追加観測では任意PNG本体を省き、既存の保存上限内に数値記録の容量を確保しています。採取器の閉鎖検証783件と受信側66件はPASSですが、Viewerの既存376件・1868件へ加算せず、実機の未達を置き換えません。
+
 ## 右Resolve前writerのcamera帰属と後処理
 
 原作の限定runで、右Resolve前に保存したwriter4件が同じqueue／論理範囲の一意なrender-taskへ一致しました。taskの保持contextとCullResults側contextの一致、完了順序、camera IDを検査し、同じrunの右receiverへ接続しました。左右の自然reader・消費drawも同じ実更新で取得しています。限定された保存writerの帰属であり、全描画や最終mask入力全体のcamera帰属ではありません。
