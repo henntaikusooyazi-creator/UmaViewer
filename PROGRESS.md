@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 後処理の実shader生成と描画参照を接続
+
+原作のshader生成APIへ渡された候補bytecodeを全byte比較し、成功時に返ったshader objectを保持して、同じrunの実drawが参照したVS／PSへ照合しました。shader名や異なるrunのポインタ一致による推定は使っていません。
+
+正常終了した限定runでは、7 draw中、先頭の拡散2 drawとbloom3 drawの **10/14 stage** を接続できました。追加runの保存データでは複数入力の拡散drawまで **12/14 stage** を照合していますが、この追加runは読取上限による **PendingManualRecovery** です。データ照合と停止成功を区別し、元の判定を保持します。最後の書戻しdrawのVS／PSはUnknownです。
+
+7 drawのVS定数prefixと、複数入力drawに対応する限定depth gridも保存しました。実bytecodeの逆アセンブルから、確認済みPSの静的定数参照は保存範囲内、一方でVSには未保存の定数参照があると判明しました。同じbytecodeに複数のpass／keyword別名が対応する場合、その選択まで一意には確定しません。[照合範囲と再描画に不足する入力](Tools/OriginalLiveRendering/INTEGRATION.md#実shader生成との同一run照合) を参照してください。
+
+採取器の最終閉鎖検証 **1006/1006**、関連受信側 **36/36** がPASSです。先行3 runのStopCompletedと、追加runのPendingを分離して保存しました。全runで通常ゲーム終了後の所有配備復元を確認しています。Pending runについて実行中の保持handle復旧成功は主張しません。
+
+公開変更は文書のみです。Viewerへの後処理実装・RGB replayは未実施で、既存の376/376・1868/1868と142秒自然再生を今回の再検証とは扱いません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## Resolveから右maskまでの描画内容を採取
 
 内部owner時刻で同期した新しい限定runで、対象Resolveから右mask消費までに観測した **7 draw** と消費maskを保存しました。各drawのshader名・参照texture・pixel shader定数・sampler・描画前後の画素gridを、同じ区間のAPI記録へ照合しています。従来の「4回」は共有入力RTに直接触れた描画の数で、途中RT上の描画を含む全pass数ではありませんでした。

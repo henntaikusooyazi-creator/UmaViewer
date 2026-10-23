@@ -1,5 +1,28 @@
 # 実Controlによる独立結合検証
 
+## 実shader生成との同一run照合
+
+限定した候補集合について、原作のshader生成APIへ渡されたbytecodeを全byte比較しました。生成APIの正常終了、返却objectの取得、そのobjectの保持、実drawにおける同じobject参照、生成がdrawより先であることを照合しています。保持により、解放後のobjectアドレス再利用を同一shaderと誤認することを防ぎます。候補の長さ・名前・別runの参照だけでは採用しません。
+
+| 対象 | 同一runの照合結果 |
+| --- | --- |
+| 先頭の拡散2 draw | VS／PSを実生成bytecodeへ接続。正常終了runの証拠 |
+| 続くbloom3 draw | VS／PSを実生成bytecodeへ接続。正常終了runの証拠 |
+| 複数入力の拡散draw | 追加Pending runの保存データでVS／PSを接続。停止成功とは別判定 |
+| 最後の入力RT書戻しdraw | VS／PSともUnknown。静的copy候補を自動採用しない |
+
+正常終了runでは10/14 stage、追加Pending runのデータ照合では12/14 stageです。保存された生成記録が欠落・未完了・失敗、返却objectやstageが不一致、生成時刻がdraw以後、異なるbytecodeへの重複一致の場合はUnknownとします。候補集合外、hook開始前に生成済みのshaderも解決したとは扱いません。同一のcompiled bytecodeに複数のserialized pass／keyword別名がある場合、bytecode内容を同定できても別名の選択は一意にはなりません。
+
+7 drawについて同じevent・context・VS／PSに属するVS定数の限定prefixを保存し、複数入力drawのdepth viewとresourceに対応する限定gridも採取しました。depthはGPU側で保存用にコピーし、観測したPresentの完了後に読み戻しています。depthの全画素や再描画一致を証明するものではありません。
+
+照合済みbytecodeだけをローカルで逆アセンブルし、参照する静的定数registerが実保存範囲に含まれるかを検査しました。確認済みPSの参照は保存範囲に収まります。VSには保存prefixの外にある変換・描画定数の参照が残るため、prefix取得を「VSの全入力充足」とは扱いません。頂点buffer・input layout・補間、textureのfilter参照近傍も未取得です。限定grid同士を使ったRGB replayや、定数欠落の推測補完は行っていません。
+
+追加run用の閉鎖検証は1006/1006、関連受信側は36/36がPASSです。実機の追加runは全体読取上限に達し、左右消費drawの完了を要求する早期終了条件も成立せず、元のPendingManualRecoveryを保持しています。先行3 runのStopCompletedをこのrunへ流用しません。ゲームを通常終了し、配備時hashと原本hashを照合して所有DLL・設定・所有metadataを復元しました。これは実行中のcontroller保持handleによる復旧成功とは別の結果です。
+
+次の再描画入力は、未同定の書戻しshader、確認済みVSが実際に参照する不足定数、各drawの頂点・補間とtexture参照近傍です。採取器の読取予算も含めてまとめて資格化する必要があり、同条件の再runを繰り返すだけでは充足しません。camera全writer帰属、queue位置、自然TextureMapping、MipBias、owner／音声epochと最終RGB一致は独立して未確定です。
+
+実bytecode・定数・depth・採取器・receiptはローカル専用です。公開変更はこの説明と進捗のみで、Viewer runtime・shader・通常UIを変更していません。既存GPU／自然再生は今回再実行しておらず、過去の成功件数へ加算しません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## Resolveから右maskまでの描画内容
 
 新しい限定runは内部owner時刻で開始し、対象Resolveから実際の右mask API呼出しまでの描画を保存しました。途中RTのwriterも対象に含め、従来のresource watch集合は変更していません。保存した観測対象のDraw／DrawIndexedは7件で、消費maskを区間終端として別に保持しています。以前の「4回」は共有入力RTへ直接関わる観測であり、後処理全体のpass数を確定したものではありません。
