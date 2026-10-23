@@ -15,10 +15,11 @@ Unity 2022.3.62f3、Windows D3D11、URP14.0.12を使用します。`Prepare-Vali
 - Built-inとURPの実camera描画、sourceの状態・buffer保持。
 - 従来 `CompositeThree` の変更なし比較用コピーによるGPU smoke。
 
-この小規模プロジェクトはengine側5クラスをコンパイルします。実 `LiveTimelineControl`、timeline bridge、session、registration、resolverの全結合をstubで代替しません。本家起点のコンパイル問題が解消するまで、Fork全体のUnity統合受入は未完了です。
+この小規模プロジェクトはengine側の限定クラスをコンパイルします。実 `LiveTimelineControl`、timeline bridge、session、registration、resolverの全結合をstubで代替しません。本家起点のコンパイル問題が解消するまで、Fork全体のUnity統合受入は未完了です。
 
 結果 `summary.json` は実行環境・件数・成否だけを含みます。UnityログやLibrary／Temp／生成結果はcommitしないでください。過去のprivateデータ照合と今回の人工テストは [PROGRESS.md](../../PROGRESS.md) で区別します。
 
 ## 明示した後処理の人工検証
 
 full Viewerでは `Invoke-IntegrationValidation.ps1 -UnityExecutable <Unity.exe> -OutputPath <repo外の新規結果先> -PostProcessOnly` を使います。通常の結合検証とは別実行で、保存された原作入力の引数は併用できません。小規模projectにも同じ人工試験をコピーします。その場合は `-executeMethod OriginalPostProcessValidation.Run -integrationOutput <repo外の結果先>` で実行してください。詳細は [INTEGRATION.md](INTEGRATION.md#明示した後処理chainの接続とrgb比較) を参照してください。
+同じ更新のdepth／typed parameter検証はfull Viewerの `Invoke-IntegrationValidation.ps1 -NaturalPostProcessOnly` を使います。自然再生への人工probe追加は `Invoke-NaturalPlaybackValidation.ps1 -FrameInputs` の明示指定です。原作の自然CB供給やRGB一致を確定する試験ではありません。

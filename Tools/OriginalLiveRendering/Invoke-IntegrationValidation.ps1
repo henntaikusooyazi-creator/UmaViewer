@@ -6,10 +6,11 @@ param(
     [string] $ConfirmedNaturalCue,
     [string] $ConfirmedNaturalFade,
     [string] $ObservedMaskAlpha,
-    [switch] $PostProcessOnly
+    [switch] $PostProcessOnly,
+    [switch] $NaturalPostProcessOnly
 )
 $ErrorActionPreference = 'Stop'
-if ($PostProcessOnly -and ($ConfirmedProducerProfile -or $ConfirmedOwnerClock -or $ConfirmedNaturalCue -or $ConfirmedNaturalFade -or $ObservedMaskAlpha)) {
+if (($PostProcessOnly -and $NaturalPostProcessOnly) -or (($PostProcessOnly -or $NaturalPostProcessOnly) -and ($ConfirmedProducerProfile -or $ConfirmedOwnerClock -or $ConfirmedNaturalCue -or $ConfirmedNaturalFade -or $ObservedMaskAlpha))) {
     throw 'Postprocess-only validation takes artificial inputs; observed profile arguments would be ignored.'
 }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -29,7 +30,7 @@ foreach ($relative in @('ProjectSettings/GraphicsSettings.asset', 'ProjectSettin
 }
 $process = $null
 try {
-    $method = if ($PostProcessOnly) { 'OriginalPostProcessValidation.Run' } else { 'OriginalRenderingIntegrationValidation.Run' }
+    $method = if ($NaturalPostProcessOnly) { 'OriginalNaturalPostProcessValidation.Run' } elseif ($PostProcessOnly) { 'OriginalPostProcessValidation.Run' } else { 'OriginalRenderingIntegrationValidation.Run' }
     $arguments = @('-batchmode', '-force-d3d11', '-projectPath', ('"' + $repo + '"'),
         '-executeMethod', $method,
         '-integrationOutput', ('"' + $output + '"'), '-logFile', ('"' + (Join-Path $output 'unity.log') + '"'))
@@ -67,7 +68,7 @@ finally {
 if (!$process -or !$process.HasExited) { throw 'Dedicated Editor did not complete; no running process is terminated by this wrapper.' }
 if ($process.ExitCode -ne 0) { throw "Integration Editor exited $($process.ExitCode); inspect the external summary and log." }
 $summary = Get-Content -Raw -LiteralPath (Join-Path $output 'integration-summary.json') | ConvertFrom-Json
-$expected = if ($PostProcessOnly) { 'OriginalPostProcessValidated_TestOnly' } else { 'ActualControlIntegrationGPUValidated_TestOnly' }
+$expected = if ($NaturalPostProcessOnly) { 'NaturalPostProcessInputsValidated_TestOnly' } elseif ($PostProcessOnly) { 'OriginalPostProcessValidated_TestOnly' } else { 'ActualControlIntegrationGPUValidated_TestOnly' }
 if ($summary.status -ne $expected) { throw 'Integration acceptance did not pass.' }
-$label = if ($PostProcessOnly) { 'Explicit postprocess GPU validation' } else { 'Actual Control integration' }
+$label = if ($NaturalPostProcessOnly) { 'Current-frame postprocess inputs' } elseif ($PostProcessOnly) { 'Explicit postprocess GPU validation' } else { 'Actual Control integration' }
 Write-Output "${label} PASS: $($summary.checks) checks; project settings bytes preserved."

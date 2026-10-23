@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][int] $MusicId,
     [Parameter(Mandatory)][string] $ConfirmedProducerProfile,
     [ValidateRange(0, 7)][int] $RightTrack = 0,
-    [ValidateRange(-1, 7)][int] $LeftTrack = -1
+    [ValidateRange(-1, 7)][int] $LeftTrack = -1,
+    [switch] $FrameInputs
 )
 $ErrorActionPreference = 'Stop'
 if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
@@ -41,6 +42,7 @@ try {
         '-liveProfile', ('"' + $profile + '"'), '-liveOutput', ('"' + $output + '"'),
         '-logFile', ('"' + (Join-Path $output 'unity.private.log') + '"'))
     $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
+    if ($FrameInputs) { $arguments += @('-liveFrameInputs', 'true') }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()
 }
@@ -57,4 +59,11 @@ if (!$process -or !$process.HasExited -or $process.ExitCode -ne 0) {
 }
 $summary = Get-Content -Raw -LiteralPath (Join-Path $output 'playback.private.json') | ConvertFrom-Json
 if ($summary.status -ne 'NaturalViewerPlaybackCompleted') { throw 'Natural Viewer playback acceptance failed.' }
+if ($FrameInputs) {
+    $inputs = Get-Content -Raw -LiteralPath (Join-Path $output 'frame-inputs.private.json') | ConvertFrom-Json
+    if ($inputs.inputRenders -le 0 -or $inputs.rgbSamples -le 0 -or $inputs.pixels -le 0 -or
+            $inputs.nonFarDepthSamples -le 0 -or $inputs.maxRgbError -gt 1) {
+        throw 'Current-frame depth/parameter RGB evidence did not pass.'
+    }
+}
 Write-Output "Natural Viewer playback PASS: $($summary.validOwnerFrames) owner updates, $($summary.renderedFrames) generated frames; $($summary.warmupLateOnlyFrames) initial late-only frames held."

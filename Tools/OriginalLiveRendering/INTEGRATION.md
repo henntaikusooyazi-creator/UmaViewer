@@ -1,5 +1,27 @@
 # 実Controlによる独立結合検証
 
+## 自然cameraのdepthとtimeline payload
+
+`OriginalCameraProducer.SetInputFramePostProcessor(processor, depthCopyShader)` と連続rendererの同名APIは、colorに加えて今回のdepthを要求する明示経路です。旧 `SetInputPostProcessor` と排他的で、どちらも未登録なら従来経路を使います。`IOriginalCameraFramePostProcessor.Process` にはproducer所有の `OriginalCameraFrame` を渡します。RTは次の描画で再利用されるため、そのcallback内で消費・copyしてください。serialは保存画像の不変性を保証しません。
+
+frameにはSource camera、color／depth RT、RenderSerial、SelectedSerial、実render cameraのview／GPU projectionとnear／far、reversed-Z情報があります。depthはlinear RFloatへのraw device値で、eye depthへ推測変換しません。Built-inではcameraのdepth生成後、URP14ではそのcameraの `endCameraRendering` 内で現在のdepth bindingをcopyします。URPのRTHandleを一時RT名としてBlitする方法は採用しません。source cameraのcomponent／depth設定は変更せず、private render cameraだけに要求を付け、callback・command bufferは描画のfinallyで解除します。別cameraのglobal depthを描画終了後に検索する経路はありません。APIの位置付けは [CameraEvent](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Rendering.CameraEvent.html) と [BuiltinRenderTextureType.Depth](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Rendering.BuiltinRenderTextureType.Depth.html) を参照してください。対応範囲は実検証したBuilt-in／URP14です。
+
+Controlの既存Bloom／Diffusion通知の直前に、発行するstructを `OriginalLiveTimelineBridge.Frame.PostEffect` へcopyします。BeginFrameでクリアするため、通知がなければnullです。再選択・再補間や既存handler順序の変更は行いません。`OriginalLiveContinuousRenderer.RenderingFrame` は同期描画中だけ有効です。`OriginalLivePostProcessInputs` にその取得関数と明示処理delegateを渡すと、SelectedSerial、一致するselected cameraとowner観測、作成済みdepth、typed payloadを要求したうえで処理します。値から原作CBへの変換はdelegateの責任であり、このclassはshader layoutを推測しません。
+
+追加の公開人工試験は、実Controlのpayloadを使ったbridge保持、欠落時のUnknown、異なるserialの拒否と、上下でdepthが異なる人工geometry、複数更新のnear／farを検証しました。Built-in／URP14合計 **45/45 PASS、768画素** です。投影から計算したdepthと実depthが一致し、depthとcolorの上下関係も確認しました。source cameraの状態、中央下地の迂回と解除も検証しています。既存の公開postprocess **32/32**、Control結合 **376/376** は独立した再検証です。
+
+`Invoke-IntegrationValidation.ps1 -NaturalPostProcessOnly` はこのfull Viewer人工試験を実行します。`Invoke-NaturalPlaybackValidation.ps1 -FrameInputs` は、通常の自然再生検証へ明示的な人工RGB probeを追加します。通常UIの描画には自動登録しません。probeは `color.rgb * 0.5 + (depth * 0.2, intensity * 0.1, 0.03)` を実chainへ渡し、入力・出力の限定readbackを独立したCPU式と比較します。係数は人工値であり、原作後処理の演算・設定を表しません。readbackは最大32回に制限します。
+
+今回の「うまぴょい伝説」は142秒を完走し、7851 owner更新を7851回描画、左右同時有効63/63更新、初回late-only 1回の保留、楽曲終了後のViewer復帰、物理初期化の既存opt-outを確認しました。126 input renderに同じ更新のdepthとpayloadを供給し、typed payloadの変化2回、非far depthを確認しています。7回・896画素の人工RGB比較は最大差1 byte、renderer／provider faultは0でした。旧72更新や65更新の別再生結果を書換えず、可変frame数だけで非退行を判断しません。
+
+depthの初稿shaderでMainTexのproperty宣言を欠いたためdefault textureを読んだ点、URPのRTHandleを一時RTとして扱った点は、この限定試験で検出して修正しました。非対称geometryの検証では既存materialのpipeline適合性を混ぜない専用の人工color／depth fixtureを使います。上下の深度差・投影との照合を受入条件へ残しました。
+
+自然再生の後に、URPのdepth要求を解決済みboolではなく元の継承optionへ復元する局所修正を加えました。最終45件には継承状態の復元確認3件を含み、32件・376件も最終ソースで再実行しました。142秒の成功runはこの復元修正前の独立した証拠として保持し、最終ソースでの自然再生再実行までは主張しません。
+
+今回成立したのはViewerの自然入力供給と、その明示処理経路の検証です。原作の7段に必要な全自然定数／variantの生成、自然TextureMapping、中央下地cameraの原作帰属、時刻原点、原作と同じframeのRGB一致、全画面・FlipScreen以降は未確定です。最後のshaderを後から候補再生成の参照へ結ぶ案は、今回のWARP／hardware閉鎖ホストでは同一候補でもcanonical IUnknownが異なり、identityの根拠にならないため採用しませんでした。原作deviceで再生成を実測した結果ではありません。新規原作runは0回で、旧生成API照合の不足を解消したとは主張しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## 明示した後処理chainの接続とRGB比較
 
 `IOriginalCameraPostProcessor.Process(Camera, RenderTexture)` は、その回のViewer camera出力を受け取る追加の明示経路です。`OriginalCameraProducer.SetInputPostProcessor`、または `OriginalLiveContinuousRenderer.SetInputPostProcessor` へ登録します。左右inputの描画後に呼ばれ、下地には適用しません。返却RTは作成済みでcamera入力と同じ大きさである必要があります。`null` の登録で解除できます。producerは登録先の所有権を持ちません。呼出し側が解除後にdisposeしてください。

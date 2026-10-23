@@ -14,12 +14,12 @@ foreach ($directory in @('Assets/Runtime', 'Assets/Editor', 'Assets/Shaders', 'P
 # Only the engine-facing components are compiled here. The real timeline integration
 # belongs to the full Viewer build; this project does not replace it with mock types.
 foreach ($name in @('OriginalMultiCameraRenderer', 'OriginalMaskCoverageGenerator',
-        'OriginalCompositeCueAdapter', 'OriginalCompositeProducerMath', 'OriginalCameraProducer', 'OriginalPostProcessChain')) {
+        'OriginalCompositeCueAdapter', 'OriginalCompositeProducerMath', 'OriginalCameraProducer', 'OriginalCameraFrame', 'OriginalPostProcessChain')) {
     foreach ($suffix in @('.cs', '.cs.meta')) {
         Copy-Item -LiteralPath (Join-Path $repo "Assets/Scripts/OriginalRendering/$name$suffix") -Destination (Join-Path $target 'Assets/Runtime')
     }
 }
-foreach ($name in @('OriginalMultiCamera', 'OriginalMaskCoverage')) {
+foreach ($name in @('OriginalMultiCamera', 'OriginalMaskCoverage', 'OriginalDepthCopy')) {
     foreach ($suffix in @('.shader', '.shader.meta')) {
         Copy-Item -LiteralPath (Join-Path $repo "Assets/Shaders/OriginalRendering/$name$suffix") -Destination (Join-Path $target 'Assets/Shaders')
     }

@@ -14,6 +14,10 @@ namespace Gallop.Live.Rendering
         RenderTexture shared, backdrop;
         bool disposed, rendering;
         IOriginalCameraPostProcessor inputPostProcessor;
+        IOriginalCameraFramePostProcessor framePostProcessor;
+        Material depthCopy;
+        RenderTexture depth;
+        long inputSerial;
         RenderTexture lastInput;
         public RenderTexture SharedInput => lastInput ? lastInput : shared;
         public RenderTexture Backdrop => backdrop;
@@ -32,24 +36,80 @@ namespace Gallop.Live.Rendering
         {
             if (disposed) throw new ObjectDisposedException(nameof(OriginalCameraProducer));
             if (rendering) throw new InvalidOperationException("Cannot change a rendering producer.");
-            inputPostProcessor = processor; lastInput = null;
+            inputPostProcessor = processor; framePostProcessor = null; lastInput = null;
+        }
+        // Explicit opt-in: depth is copied while this private camera owns the
+        // render. Never resolve a previous camera's global depth after returning.
+        public void SetInputFramePostProcessor(IOriginalCameraFramePostProcessor processor, Shader depthCopyShader)
+        {
+            if (disposed) throw new ObjectDisposedException(nameof(OriginalCameraProducer));
+            if (rendering) throw new InvalidOperationException("Cannot change a rendering producer.");
+            if (processor != null && (!depthCopyShader || !depthCopyShader.isSupported || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat)))
+                throw new ArgumentException("An explicit supported depth-copy shader and RFloat target are required.");
+            Material replacement = processor == null ? null : new Material(depthCopyShader) { hideFlags = HideFlags.HideAndDontSave };
+            if (replacement && replacement.passCount < 2) { Destroy(replacement); throw new ArgumentException("Bound and current-camera depth-copy passes are required."); }
+            if (depthCopy) Destroy(depthCopy);
+            depthCopy = replacement;
+            framePostProcessor = processor; inputPostProcessor = null; lastInput = null;
         }
         public RenderTexture RenderInput(Camera source) => Render(source, shared, true);
-        RenderTexture Render(Camera source, RenderTexture output, bool processInput = false)
+        public RenderTexture RenderInput(Camera source, long selectedSerial) => Render(source, shared, true, selectedSerial);
+        RenderTexture Render(Camera source, RenderTexture output, bool processInput = false, long selectedSerial = 0)
         {
             if (disposed) throw new ObjectDisposedException(nameof(OriginalCameraProducer));
             if (!source) throw new ArgumentNullException(nameof(source));
             if (rendering) throw new InvalidOperationException("Camera producer reentry.");
             var active = RenderTexture.active; bool srgb = GL.sRGBWrite; rendering = true;
+            bool captureDepth = processInput && framePostProcessor != null;
+            CommandBuffer copy = null;
+            Action<ScriptableRenderContext, Camera> onCameraEnd = null;
+            UniversalAdditionalCameraData additional = null;
+            CameraOverrideOption oldDepthRequest = CameraOverrideOption.UsePipelineSettings;
+            bool depthSeen = false, attached = false;
             try
             {
                 renderCamera.CopyFrom(source);
                 renderCamera.transform.SetPositionAndRotation(source.transform.position, source.transform.rotation);
                 renderCamera.targetTexture = output; renderCamera.enabled = false;
                 GL.sRGBWrite = false;
+                if (captureDepth)
+                {
+                    if (!depth)
+                    {
+                        depth = new RenderTexture(output.width, output.height, 0, RenderTextureFormat.RFloat, RenderTextureReadWrite.Linear)
+                        { name = "Original.CurrentCameraDepth", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+                        if (!depth.Create()) throw new InvalidOperationException("Depth target creation failed.");
+                    }
+                    if (!depth.IsCreated()) throw new InvalidOperationException("Depth target has been released.");
+                    RenderTexture.active = depth; GL.Clear(false, true, new Color(-1, -1, -1, -1));
+                    RenderTexture.active = output;
+                    renderCamera.depthTextureMode |= DepthTextureMode.Depth;
+                    copy = new CommandBuffer { name = "Original.CopyCurrentCameraDepth" };
+                    if (GraphicsSettings.currentRenderPipeline == null)
+                    {
+                        copy.Blit(BuiltinRenderTextureType.Depth, depth, depthCopy);
+                        renderCamera.AddCommandBuffer(CameraEvent.BeforeImageEffects, copy);
+                        attached = true;
+                    }
+                    else if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset)
+                    {
+                        additional = renderCamera.GetUniversalAdditionalCameraData();
+                        oldDepthRequest = additional.requiresDepthOption; additional.requiresDepthTexture = true;
+                        // URP's RTHandle is not a temporary RT registered under
+                        // this name. Sample the current global binding in pass 1.
+                        copy.Blit(Texture2D.blackTexture, depth, depthCopy, 1);
+                        onCameraEnd = (context, camera) =>
+                        {
+                            if (camera != renderCamera) return;
+                            context.ExecuteCommandBuffer(copy); context.Submit(); depthSeen = true;
+                        };
+                        RenderPipelineManager.endCameraRendering += onCameraEnd;
+                    }
+                    else throw new NotSupportedException("Depth capture supports Built-in and URP only.");
+                }
                 if (GraphicsSettings.currentRenderPipeline == null)
                 {
-                    renderCamera.Render(); LastBackend = "BuiltIn.Camera.Render";
+                    renderCamera.Render(); depthSeen = true; LastBackend = "BuiltIn.Camera.Render";
                 }
                 else if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset)
                 {
@@ -62,14 +122,26 @@ namespace Gallop.Live.Rendering
                 RenderCount++;
                 if (processInput)
                 {
-                    var result = inputPostProcessor == null ? output : inputPostProcessor.Process(source, output);
+                    RenderTexture result;
+                    if (captureDepth)
+                    {
+                        if (!depthSeen) throw new InvalidOperationException("The current camera depth callback was not observed.");
+                        result = framePostProcessor.Process(new OriginalCameraFrame(source, renderCamera, output, depth, ++inputSerial, selectedSerial));
+                    }
+                    else result = inputPostProcessor == null ? output : inputPostProcessor.Process(source, output);
                     if (!result || !result.IsCreated() || result.width != output.width || result.height != output.height)
                         throw new InvalidOperationException("Postprocessor must return a created target of the camera input size.");
                     lastInput = result; return result;
                 }
                 return output;
             }
-            finally { renderCamera.targetTexture = null; RenderTexture.active = active; GL.sRGBWrite = srgb; rendering = false; }
+            finally
+            {
+                if (onCameraEnd != null) RenderPipelineManager.endCameraRendering -= onCameraEnd;
+                if (additional) additional.requiresDepthOption = oldDepthRequest;
+                if (copy != null) { if (attached) renderCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, copy); copy.Release(); }
+                renderCamera.targetTexture = null; RenderTexture.active = active; GL.sRGBWrite = srgb; rendering = false;
+            }
         }
         static RenderTexture Target(int width, int height, string name)
         {
@@ -89,7 +161,9 @@ namespace Gallop.Live.Rendering
             if (rendering) throw new InvalidOperationException("Cannot dispose a rendering camera producer.");
             if (shared) { shared.Release(); Destroy(shared); shared = null; }
             if (backdrop) { backdrop.Release(); Destroy(backdrop); backdrop = null; }
-            inputPostProcessor = null; lastInput = null; Destroy(cameraObject); disposed = true;
+            if (depth) { depth.Release(); Destroy(depth); depth = null; }
+            if (depthCopy) { Destroy(depthCopy); depthCopy = null; }
+            framePostProcessor = null; inputPostProcessor = null; lastInput = null; Destroy(cameraObject); disposed = true;
         }
     }
 }

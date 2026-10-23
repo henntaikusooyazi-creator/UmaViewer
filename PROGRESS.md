@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 自然depthとtimeline値の連続供給
+
+明示opt-inのframe postprocessorを追加しました。今回描いたViewer cameraのcolor・raw device depth、render serial、selected serial、view／GPU projection、near／farを同じcallbackへ渡します。実Controlがその更新で発行したBloom／Diffusion payloadもbridgeに値として保存し、selected camera・owner観測・serialが揃った場合だけ消費します。未通知の値を前回から補完しません。
+
+「うまぴょい伝説」の実楽曲142秒が自然終端・Viewer復帰まで成功し、**7851/7851 owner更新を描画**しました。左右同時有効 **63/63更新**、camera入力 **126回**でdepthとtyped parameterを連続供給し、parameter変化2回も観測しています。7回の限定GPU readbackで **896画素**を人工RGB式と照合し、最大差1 byte以内でした。実geometryを含む非far depthも確認しました。これは今回追加した供給経路の検証で、前節の原作保存入力896画素完全一致とは別です。原作7段処理への自然な全定数の変換や原作RGB一致は確定しません。
+
+追加人工試験はBuilt-in／URP14合計 **45/45 PASS、768画素**。上下で異なるdepth、更新ごとのclip値、typed payload、古いserial／欠落値の拒否を確認しました。既存の32件と376件も個別に再検証しています。[APIと比較の境界](Tools/OriginalLiveRendering/INTEGRATION.md#自然cameraのdepthとtimeline-payload) を参照してください。
+
+最後のshader identityはUnknownです。同じ候補を生成し直して既存shader参照へ結ぶ案は、閉鎖ホストで別objectになるため不採用としました。新しい原作runは行わず、前回の生成API照合・保存RGB再現・停止判定を保持しています。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` は変更しません。
+
 ## 後処理の明示接続と保存RGB比較
 
 `OriginalPostProcessChain` を追加し、明示したMaterial・Mesh・texture参照から複数段の中間RTを生成できるようにしました。`OriginalCameraProducer.SetInputPostProcessor` と連続rendererの同名APIで、camera描画後・mask入力前へ接続します。未登録時の経路と中央下地の描画は従来どおりです。通常ライブへの自動登録は行いません。

@@ -38,6 +38,7 @@ public static class OriginalLivePlaybackValidation
     static int rightTrack, leftTrack = -1, previousLeftKey = int.MinValue;
     static Func<OriginalLiveTimelineBridge.Frame, Camera> resolveBaseCamera;
     static OriginalLiveChannelEvidence channelEvidence;
+    static OriginalNaturalPostProcessProbe frameInputs;
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -71,6 +72,7 @@ public static class OriginalLivePlaybackValidation
         SessionState.SetInt(Active + ".Right", selectedRight);
         SessionState.SetInt(Active + ".Left", selectedLeft);
         SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
+        SessionState.SetBool(Active + ".FrameInputs", Argument("-liveFrameInputs") == "true");
         EditorApplication.playModeStateChanged += State;
         EditorApplication.update += Poll;
         EditorSceneManager.OpenScene("Assets/Scenes/Version2.unity");
@@ -167,6 +169,11 @@ public static class OriginalLivePlaybackValidation
         resolveBaseCamera = frame => !selectedCamera.HasValue ? null : selectedCamera.Value < 0 ? freeCamera : control.GetCamera(selectedCamera.Value)?.camera;
         preview = new OriginalLiveContinuousRenderer(provider, rightTrack, dual ? (int?)leftTrack : null,
             resolveBaseCamera, Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target, dual);
+        if (SessionState.GetBool(Active + ".FrameInputs", false))
+        {
+            frameInputs = new OriginalNaturalPostProcessProbe(preview);
+            preview.SetInputFramePostProcessor(frameInputs.Processor, Shader.Find("Hidden/OriginalRendering/DepthCopy"));
+        }
         provider.FrameReady += Observe;
         var canvas = new GameObject("Explicit Viewer preview").AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         var image = new GameObject("Continuous output").AddComponent<RawImage>(); image.transform.SetParent(canvas.transform, false);
@@ -316,6 +323,7 @@ public static class OriginalLivePlaybackValidation
                 preview.RenderCount > 100 && result.audioPlayingObserved && result.audioTime > 1 &&
                 provider.Bridge.FaultCount == 0 && provider.ConsumerFaultCount == 0 && result.lastOwnerTime >= result.timeLength &&
                 result.warmupLateOnlyFrames <= 1 && preview.RenderCount == result.validOwnerFrames;
+            pass &= frameInputs == null || frameInputs.Passed;
             Finish(pass ? null : "Natural playback acceptance predicate failed");
         }
     }
@@ -324,6 +332,7 @@ public static class OriginalLivePlaybackValidation
         if (result == null || string.IsNullOrEmpty(output)) return;
         File.WriteAllText(Path.Combine(output, "playback.private.json"), JsonUtility.ToJson(result, true));
         File.WriteAllText(Path.Combine(output, "samples.private.json"), JsonUtility.ToJson(new Samples { rows = samples.ToArray() }, true));
+        frameInputs?.Save(output);
     }
     static void Finish(string failure)
     {
@@ -333,7 +342,7 @@ public static class OriginalLivePlaybackValidation
         result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
         result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
         if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
-        channelEvidence?.Dispose(); preview?.Dispose(); provider?.Dispose();
+        channelEvidence?.Dispose(); frameInputs?.Dispose(); preview?.Dispose(); provider?.Dispose();
         if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
         Save(); Application.logMessageReceived -= Log;
         EditorApplication.ExitPlaymode();

@@ -2978,6 +2978,7 @@ namespace Gallop.Live.Cutt
 
             SetupBloomDiffusionUpdateInfo( ref updateInfo, currentKey, nextKey, currentFrame);
 
+            OriginalCompositeBridge?.CapturePostEffect(updateInfo);
             OnUpdatePostEffect_BloomDiffusion(updateInfo);
         }
 

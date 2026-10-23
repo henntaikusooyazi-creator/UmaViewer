@@ -33,8 +33,9 @@ namespace Gallop.Live.Rendering
             public readonly long Serial;
             public readonly float ViewerFrame;
             public readonly ReadOnlyCollection<Selection> Selections;
-            internal Frame(long serial, float frame, Selection[] selections)
-            { Serial = serial; ViewerFrame = frame; Selections = Array.AsReadOnly(selections); }
+            public readonly PostEffectUpdateInfo_BloomDiffusion? PostEffect;
+            internal Frame(long serial, float frame, Selection[] selections, PostEffectUpdateInfo_BloomDiffusion? postEffect)
+            { Serial = serial; ViewerFrame = frame; Selections = Array.AsReadOnly(selections); PostEffect = postEffect; }
             public bool TryGetTrack(int ordinal, out Selection selection)
             {
                 selection = default; int count = 0;
@@ -49,6 +50,7 @@ namespace Gallop.Live.Rendering
         long serial, nextToken;
         float viewerFrame;
         bool collecting;
+        PostEffectUpdateInfo_BloomDiffusion? postEffect;
         float? ownerClockMultiplier;
         OriginalCompositeProducerMath.ComparisonFrames? ownerClock;
         public event Action<Frame> FrameReady;
@@ -71,7 +73,12 @@ namespace Gallop.Live.Rendering
         }
         long TokenFor(object key) => tokens.GetValue(key, _ => new Token { Id = ++nextToken }).Id;
         public void BeginFrame(float frame)
-        { pending.Clear(); viewerFrame = frame; serial++; collecting = true; }
+        { pending.Clear(); postEffect = null; viewerFrame = frame; serial++; collecting = true; }
+
+        // Preserve the value actually emitted by Control in this update. No key
+        // search, parameter conversion, or previous-frame fallback occurs here.
+        public void CapturePostEffect(PostEffectUpdateInfo_BloomDiffusion value)
+        { if (collecting) postEffect = value; }
 
         // Called with the already selected key objects and the ratio actually used by
         // LiveTimelineControl. No second key search or interpolation-helper invocation.
@@ -103,7 +110,7 @@ namespace Gallop.Live.Rendering
         {
             if (!collecting) return;
             collecting = false;
-            var frame = new Frame(serial, viewerFrame, pending.ToArray()); LastFrame = frame;
+            var frame = new Frame(serial, viewerFrame, pending.ToArray(), postEffect); LastFrame = frame;
             // A comparison pair belongs to one owner update. A second late update
             // without AlterUpdate must not reuse it as a new observation.
             ownerClock = null;

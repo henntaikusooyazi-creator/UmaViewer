@@ -22,12 +22,21 @@ namespace Gallop.Live.Rendering
         public Exception LastException { get; private set; }
         public OriginalCompositeCueAdapter.Unresolved LastUnresolved { get; private set; }
         public int LastTransparentChannels { get; private set; }
+        // Available only during this synchronous render, including postprocessing.
+        public OriginalLiveTimelineBridge.Frame RenderingFrame { get; private set; }
 
         public void SetInputPostProcessor(IOriginalCameraPostProcessor processor)
         {
             if (disposed) throw new ObjectDisposedException(nameof(OriginalLiveContinuousRenderer));
             if (rendering) throw new InvalidOperationException("Cannot change a rendering renderer.");
             cameras.SetInputPostProcessor(processor);
+        }
+
+        public void SetInputFramePostProcessor(IOriginalCameraFramePostProcessor processor, Shader depthCopyShader)
+        {
+            if (disposed) throw new ObjectDisposedException(nameof(OriginalLiveContinuousRenderer));
+            if (rendering) throw new InvalidOperationException("Cannot change a rendering renderer.");
+            cameras.SetInputFramePostProcessor(processor, depthCopyShader);
         }
 
         public readonly struct Trace
@@ -111,7 +120,7 @@ namespace Gallop.Live.Rendering
             var full = new Rect(0, 0, 1, 1);
             if ((!skipRight && right.Selection.ViewerCamera.rect != full) || (!skipLeft && left.Selection.ViewerCamera.rect != full))
             { LastStatus = "UnsupportedViewerViewport"; return; }
-            rendering = true;
+            rendering = true; RenderingFrame = frame.Selected;
             try
             {
                 var background = cameras.RenderBase(baseCamera);
@@ -120,14 +129,14 @@ namespace Gallop.Live.Rendering
                     observer(new Trace(frame.Selected, baseCamera, right.Selection.ViewerCamera,
                         leftTrack.HasValue ? left.Selection.ViewerCamera : null, LastTransparentChannels, step));
                 renderer.RenderSequential(background,
-                    () => skipRight ? Transparent() : coverage.GenerateSubmission(cameras.RenderInput(right.Selection.ViewerCamera), output.width, output.height, rp),
+                    () => skipRight ? Transparent() : coverage.GenerateSubmission(cameras.RenderInput(right.Selection.ViewerCamera, frame.Selected.Serial), output.width, output.height, rp),
                     () => !skipLeft
-                        ? coverage.GenerateSubmission(cameras.RenderInput(left.Selection.ViewerCamera), output.width, output.height, lp)
+                        ? coverage.GenerateSubmission(cameras.RenderInput(left.Selection.ViewerCamera, frame.Selected.Serial), output.width, output.height, lp)
                         : Transparent(), output, observe);
                 RenderCount++; LastStatus = "RenderedContinuousViewerCameras";
             }
             catch (Exception e) { LastException = e; LastStatus = "RenderFailed"; }
-            finally { rendering = false; }
+            finally { RenderingFrame = null; rendering = false; }
         }
         bool IsTransparentInactive(OriginalLiveContinuousProvider.ResolvedSelection item)
         {
