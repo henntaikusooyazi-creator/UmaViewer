@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 原作CPUパラメータ生成とGPU定数の対応
+
+限定runで実methodと描画用値型のmetadataを取得し、Bloom／Diffusionのvector生成と、movieを使わないPostFilmの定数設定を確認しました。classの保存値と描画用値型のlayoutは区別しています。対象mask描画で直近の限定記録を固定し、同一更新・receiver cameraが一致するCPU入力を一意に選びました。別cameraや先行更新の値を代用していません。
+
+公開実装は `OriginalPostProcessProducerMath` と明示opt-inの `OriginalLivePostProcessParameters` です。確認済み依存を外部profileから受け取り、既存のcurrent color／depth・typed payload経路へ接続します。Filmは同じselected serial・cameraに属する明示状態だけを受け入れ、未供給時はUnknownのままです。通常ライブの自動置換やPostFilm keyの新しい補間実装は行いません。
+
+公開の人工入力試験はBuilt-in／URP14で **44/44 PASS、4096画素のRGB差0**。既存Control結合も現在のソースで **376/376 PASS**。同じ原作更新から選んだCPU入力を公開算術へ渡す私有試験では、対象7段へ供給する **49/49 float32成分がGPU定数とbit一致**し、その値を再生成した7 drawの **896/896画素がRGBA一致**しました。連続生成の中間896画素・最終128画素も同じ保存参照に一致し、独立した原作観測数へ合算しません。私有RGB試験はBuilt-in D3D11です。
+
+採取runはmetadata取得、先頭限定記録、対象描画に合わせたリング記録を別々に保持し、いずれもStopCompleted・通常終了後の所有配備復元を確認しました。先頭記録だけでは対象更新に届かなかったため、その記録を同一更新比較へ採用していません。過去Pendingの判定は変更しません。
+
+これは自然状態を原作CPUで採取した限定領域の再描画です。Viewerの実楽曲からPostFilm状態を連続生成するprovider、全global定数の自然生成、最後のshader生成identity、時刻原点、全画面RGB一致は未確定です。今回、142秒の自然再生は再実行していません。[APIと比較範囲](Tools/OriginalLiveRendering/INTEGRATION.md#確認済み後処理パラメータの生成) を参照してください。原作のprogram・定数値・layout・採取器・receiptは公開しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## 各段の入力更新と中間RGB比較
 
 既存chainへ、描画ごとの定数準備、現在の外部textureの解決、描画直後の出力通知を追加しました。現在depthを前回の参照で補完せず、右・左cameraの各同期callback内で解決できます。通知先はRTが再利用される前にcopy・readbackします。従来の引数だけで呼ぶ経路は保持しています。

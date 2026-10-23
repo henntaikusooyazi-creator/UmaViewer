@@ -216,6 +216,39 @@ Unity f3／D3D11で、選択したローカル実楽曲の自然再生を通常�
 
 検証ブランチ：`codex/validate-original-live-integration`。成功済みの `feature/original-live-rendering`（`781ef89`）へ基盤修正を混ぜないための別ブランチです。本家PRを提出するものではありません。
 
+## 確認済み後処理パラメータの生成
+
+`OriginalPostProcessProducerMath` は、確認済みCPU演算の範囲を計算します。`ConfirmedProfile` の依存値は呼出し側が供給し、原作値を公開コードへ埋め込みません。縮小寸法はfloat32積から整数へ変換した後で除算し、Bloomのaspect除算・倍率積も命令順に丸めます。出力はPixelSize、brightness／saturation／contrast／threshold、初期Bloomとblur用Bloom、weight／blend flagです。graphやshader variantの選択は計算器の責務に含めません。`SourcePrefilterParameter` も、確認済みの該当分岐を呼出し側が選んだ場合だけ使用する値です。
+
+PostFilmは評価済みの `FilmInputs` を明示供給します。depth clipの分岐、offsetのvector化、rollのaspect成分、depth／vignette flagを生成し、他の成分を保持します。入力snapshotは変更しません。movie layer・movie maskの準備は対象外で、推定による代替計算は行いません。
+
+`OriginalLivePostProcessParameters` は従来の `OriginalLivePostProcessInputs` の検査を使い、current selected update・camera・owner観測・color／depth・Bloom／Diffusion payloadが揃ってから計算します。任意のFilm providerは `FilmObservation` を返し、そのselected serialとcameraも照合します。nullはUnknownです。Filmが必要なprogramは呼出し側で描画を保留し、前回値やゼロ値を補いません。callbackやGPU処理が失敗した場合、成功countは増えません。
+
+```csharp
+var parameters = new OriginalLivePostProcessParameters(
+    () => renderer.RenderingFrame,
+    confirmedPostProcessProfile,
+    (frame, values) =>
+    {
+        // この例のprogramはFilmを必要とする。
+        if (!values.Film.HasValue)
+            throw new InvalidOperationException("Current Film input required.");
+        return chain.Process(frame.Source, frame.Color,
+            (stage, material) => PrepareConfirmedProgram(stage, material, values),
+            (stage, output) => CopySelectedIntermediate(stage, output));
+    },
+    frame => ResolveConfirmedCurrentFilm(frame));
+renderer.SetInputFramePostProcessor(parameters, depthCopyShader);
+```
+
+上記のprofile、program、binding、Film providerは明示登録です。この例は原作shaderや自然PostFilm keyの解決を提供しません。既存API、未登録時の描画、中央下地、通常ライブの登録・通知順序は変更していません。
+
+人工試験は既存wrapperの `-PostProcessParametersOnly` で実行できます。原作入力の任意引数や他の専用試験modeとは併用できません。Built-in／URP14で **44/44 PASS、4096画素のRGB差0**。丸め・分岐・入力保持・同一camera／serial・Unknown／古いFilm／欠落payloadの扱いを検証しました。既存Control結合は現在のソースで376/376 PASS、wrapperの併用拒否2ケースもEditorを起動せず確認しました。
+
+私有の原作比較では、対象drawの同一更新に属するreceiver cameraとCPU入力を照合し、7段へ供給する49 float32成分をGPU定数へbit比較しました。同じ成分の複数drawへの再供給を含む件数です。公開算術でこれらを再生成して既存chainへ渡し、独立7 drawの896画素、連続7段の中間896画素、最終128画素でRGBA一致しました。連続比較は同じ保存参照の再評価です。行列・global値・画像・depth・頂点等の残りの保存入力は保持しており、全定数を自然生成した結果ではありません。最終shaderの生成identityや全画面・全frame一致も認定しません。CPU command bufferから描画queueへの完全なwriter閉包を証明するものでもありません。原作値・native layout・program・採取器・receiptはrepo外だけに保存しています。
+
+今回の変更後に142秒の自然楽曲は再実行していません。PostFilmの連続timeline providerは未接続で、自然7段RGBの完成とは区別します。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## 基盤修正
 
 - [PR #234](https://github.com/katboi01/UmaViewer/pull/234) の最初の [コンパイル修正](https://github.com/OmniTroid/UmaViewer/commit/fbaaa925ab54c9f1f472a8ee7428b7e6ebc7fbff) だけを出典付きで適用しています。後続のplatform対応やshader変更は取り込みません。
