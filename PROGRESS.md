@@ -4,21 +4,21 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
-## 右入力の観測準備と未ARM終了
+## 右Resolve前writerのcamera帰属と後処理
 
-右の先行versionを取得するため、ローカル専用の明示観測モードを資格化しました。同じrunのreceiverから解決した入力RTを先行更新で確認し、次の実更新だけでcamera ID・task・writer・Resolve・消費drawを結ぶ設計です。左のIDや共有RTのpointerだけから右の帰属を決めません。
+原作の新しい限定runで、右Resolve前の保存writer4件を、一意のrender-task・保持context・同じrunの右receiverのcameraへ接続しました。左右の自然readerと消費drawも同じ実更新で取得しました。同じResolveが二つのcamera記録へ付いていても、独立した二観測には数えません。
 
-閉鎖環境では従来モード625件、右用モード625件、wire入力26件を確認しました。両モードの件数は別の構成で、Viewerの376/376・1868/1868へ加算しません。実機の限定起動では字幕workerの待機条件が成立せず、ARMを発行していません。**右cameraの新しい原作証拠は未取得**です。
+ただし、Resolveから右mask drawまでに4回の後処理があり、入力RTへの書戻しも観測しました。**保存writerのcamera帰属は成立、Resolve結果の無変更消費は不成立**です。保存されたresource参照の経路は追えますが、後処理の全writer・camera・実画素寄与は未証明です。後続の左Resolveへ右versionを流用しません。[段階別の判定](Tools/OriginalLiveRendering/INTEGRATION.md#右resolve前writerのcamera帰属と後処理) を参照してください。
 
-ゲームの通常終了後に所有配備を復元し、元のPending判定を保持しました。実行時の保持handleによる復旧成功へ昇格しません。失敗時の既存字幕スコアを有限に保存する補助処理も閉鎖20件で検証しましたが、実UIでの再検証は未実施で、字幕失敗の原因を解決したとは判定しません。[観測条件と残件](Tools/OriginalLiveRendering/INTEGRATION.md#右入力の先行versionの観測準備) を参照してください。
+字幕の背景依存を通常再生で再現し、判定基準と待機時間を保ったままmaskを追加画像で資格化しました。別の通常再生と実採取で同期を確認しました。採取中に判明したcamera ID位置とcallback／task／reader順序の誤りも訂正し、隣接値・欠落・重複・未完了の負例を追加しました。最終native閉鎖検証630/630、字幕36件、補助24件は独立した検証であり、Viewerの376/376・1868/1868へ加算しません。
 
-今回の公開変更も文書のみです。左右の既存camera選択、renderer、shader、自然TextureMapping、各false／Unknownと過去の成功・Pendingは維持します。
+最終runはStopCompleted・保持handleによる復旧・通常終了後の所有配備復元を確認しました。UI画像保存の容量上限は別判定です。以前の未ARM Pendingと途中runの未達範囲は書き換えません。今回の公開変更は文書のみで、既存のchannel別camera選択を維持します。最終mask入力の全面的なcamera帰属、中央下地、自然TextureMapping・投影・MipBias・owner epochと各false判定は未確定のままです。
 
 ## 左入力のcamera帰属を限定確認
 
 新たな原作の限定観測で、左入力のResolve前に保存したresource writerを、同じ描画キュー範囲のrender-taskへ一意に接続しました。taskが保持するculling contextの一致とcamera IDを確認し、同じrunの左receiverが参照するcameraと一致しました。観測したwriter部分についての帰属であり、画像に寄与した全描画の帰属を証明するものではありません。
 
-同じResolve記録が左右のcamera記録へ付いていても、独立した左右の観測として数えません。対象は右drawより後、左drawより前の共有入力versionです。右入力の先行versionと中央下地のcameraはUnknownのままです。[帰属の条件と適用範囲](Tools/OriginalLiveRendering/INTEGRATION.md#左入力のcamera帰属と共有rtのversion) を参照してください。
+同じResolve記録が左右のcamera記録へ付いていても、独立した左右の観測として数えません。この左限定runの対象は右drawより後、左drawより前の共有入力versionです。当時未採取だった右側は上記の別runで保存writerの帰属を確認し、中央下地はUnknownを維持しています。[帰属の条件と適用範囲](Tools/OriginalLiveRendering/INTEGRATION.md#左入力のcamera帰属と共有rtのversion) を参照してください。
 
 既存Viewerは左右それぞれのSelectionのcameraを使用します。今回の結果は左の限定観測とその方針の対応を支持しますが、camera投影・RGBや自然TextureMappingの一致、原作値の連続供給を新たに実装した結果ではありません。公開変更は文書のみです。直前の376/376・1868/1868は過去の成功として保持し、今回の再実行件数へ加算しません。
 
