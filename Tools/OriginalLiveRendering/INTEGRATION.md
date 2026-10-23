@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 左入力のcamera帰属と共有RTのversion
+
+原作の限定観測では、保存した左入力のresource writerとrender-taskの描画キュー参照・論理範囲を照合し、重なるtaskが一つだけであることを要求しました。task側の保持contextとCullResults側のcontextの一致、非ゼロのcamera ID、正常完了、writerより前のtask完了、Resolveより前のwriter完了も確認しています。camera IDはrenderer数とは別に扱い、同じrunのcallback・receiver・camera参照へ接続しました。
+
+この保存範囲では左receiverのcameraと一致しました。保存したwriterは有限の一部分です。入力画像の全writer、右channel、中央下地の生成cameraまで確定した意味ではありません。別runのpointerやcamera IDを再利用しません。
+
+共有RTのAPI identityが同じでも、内容のversionは異なります。同じResolveが複数のcamera記録に添付される場合は重複を除き、Resolveの後でその入力を消費するdrawだけへ帰属させます。今回の対象Resolveは右drawの後・左drawの前です。左の結果を先行する右drawへ遡って適用しません。
+
+`OriginalLiveContinuousRenderer` は各channelの `Selection.ViewerCamera` と明示した下地resolverを使用します。この既存方針に対して、左の限定観測との構造上の対応が得られました。原作cameraの投影・post effect・RGB一致や、下地resolverの正式帰属を認定するものではありません。`FullViewportMapping` は引き続きViewerが生成するRTのpolicyです。自然なUV/ST生成元・投影契約・MipBiasの不足を、このcamera帰属から補いません。
+
+今回の公開差分は文書のみで、runtime renderer・provider・coverage shader・Editor検証器は変更していません。直前の公開376/376・private1868/1868は再実行せず、過去の独立した成功として保持します。原作の最終限定runの正常停止・復元と、容量上限に達したUI画像保存は別判定です。実値・raw・private receipt・採取コードは公開しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と、過去runの元Pending判定を維持します。
+
 ## 保存drawのmask alpha比較
 
 `Invoke-IntegrationValidation.ps1 -ObservedMaskAlpha <repo外のJSON>` は、限定された外部alpha観測をEditorだけの比較へ渡します。通常のrenderer・provider・楽曲再生・UIは変更しません。原作画像や実値を公開repoへ保存しません。

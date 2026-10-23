@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 左入力のcamera帰属を限定確認
+
+新たな原作の限定観測で、左入力のResolve前に保存したresource writerを、同じ描画キュー範囲のrender-taskへ一意に接続しました。taskが保持するculling contextの一致とcamera IDを確認し、同じrunの左receiverが参照するcameraと一致しました。観測したwriter部分についての帰属であり、画像に寄与した全描画の帰属を証明するものではありません。
+
+同じResolve記録が左右のcamera記録へ付いていても、独立した左右の観測として数えません。対象は右drawより後、左drawより前の共有入力versionです。右入力の先行versionと中央下地のcameraはUnknownのままです。[帰属の条件と適用範囲](Tools/OriginalLiveRendering/INTEGRATION.md#左入力のcamera帰属と共有rtのversion) を参照してください。
+
+既存Viewerは左右それぞれのSelectionのcameraを使用します。今回の結果は左の限定観測とその方針の対応を支持しますが、camera投影・RGBや自然TextureMappingの一致、原作値の連続供給を新たに実装した結果ではありません。公開変更は文書のみです。直前の376/376・1868/1868は過去の成功として保持し、今回の再実行件数へ加算しません。
+
+今回の最終原作runは正常停止・hook復元・drain・pin照合・通常終了後の所有配備復元を確認しました。別のUI画像保存は既存の容量上限で終了しており、UI観測全体の成功とは扱いません。過去のPending判定と各false／Unknownは維持します。
+
 ## 保存された原作drawとのmask alpha比較
 
 原作の同一drawに属する入力宣言・index／vertex・定数upload・描画後画像を照合し、選択したdrawのUV/STとY反転条件を既存adapter→coverage→GPUへ明示入力しました。新しいEditor検証器は元RTの整数画素中心を保持して有限gridを読み、原作の描画後alphaと比較します。画像をgrid解像度へ縮小して描き直す方法とは区別します。
