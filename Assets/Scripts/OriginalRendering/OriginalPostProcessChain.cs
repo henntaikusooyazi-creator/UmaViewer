@@ -17,11 +17,20 @@ namespace Gallop.Live.Rendering
             public readonly string Property;
             public readonly int Stage;
             public readonly Texture External;
+            internal readonly Func<Texture> ResolveExternal;
             public Binding(string property, int stage, Texture external = null)
             {
                 if (string.IsNullOrEmpty(property) || stage < -2 || (stage == -2 && !external))
                     throw new ArgumentException("An explicit texture binding is required.");
-                Property = property; Stage = stage; External = external;
+                Property = property; Stage = stage; External = external; ResolveExternal = null;
+            }
+            // Resolve once per draw, inside the synchronous frame callback. No
+            // texture from the preceding render is retained as a fallback.
+            public Binding(string property, Func<Texture> external)
+            {
+                if (string.IsNullOrEmpty(property) || external == null)
+                    throw new ArgumentException("An explicit current texture resolver is required.");
+                Property = property; Stage = -2; External = null; ResolveExternal = external;
             }
         }
         public sealed class Pass
@@ -56,7 +65,7 @@ namespace Gallop.Live.Rendering
                     var pass = this.passes[i] ?? throw new ArgumentException("A pass is missing.");
                     foreach (var binding in pass.Bindings)
                         if (string.IsNullOrEmpty(binding.Property) || binding.Stage >= i || binding.Stage < -2 ||
-                            (binding.Stage == -2 && !binding.External)) throw new ArgumentException("Invalid or forward texture reference.");
+                            (binding.Stage == -2 && !binding.External && binding.ResolveExternal == null)) throw new ArgumentException("Invalid or forward texture reference.");
                     var rt = new RenderTexture(pass.Width, pass.Height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
                     { name = "Original.ExplicitPostProcess." + i, antiAliasing = 1, filterMode = FilterMode.Bilinear,
                       wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
@@ -67,6 +76,13 @@ namespace Gallop.Live.Rendering
             catch { Dispose(); throw; }
         }
         public RenderTexture Process(Camera camera, RenderTexture input)
+            => Process(camera, input, null, null);
+
+        // Both callbacks are synchronous. Copy a completed target in the
+        // callback if it must survive reuse. The caller owns parameter meaning;
+        // no timeline-to-shader conversion or missing-value fallback is implied.
+        public RenderTexture Process(Camera camera, RenderTexture input,
+            Action<int, Material> prepare, Action<int, RenderTexture> completed)
         {
             if (disposed) throw new ObjectDisposedException(nameof(OriginalPostProcessChain));
             if (!input || !input.IsCreated()) throw new ArgumentException("A created camera input is required.");
@@ -81,16 +97,23 @@ namespace Gallop.Live.Rendering
                     var pass = passes[i];
                     if (!pass.Material || !pass.Material.shader || !pass.Material.shader.isSupported || pass.ShaderPass >= pass.Material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
                         throw new InvalidOperationException("The explicit pass inputs are unavailable.");
+                    prepare?.Invoke(i, pass.Material);
+                    if (!input || !input.IsCreated() || !pass.Material || !pass.Material.shader || !pass.Material.shader.isSupported ||
+                        pass.ShaderPass >= pass.Material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
+                        throw new InvalidOperationException("The prepared pass inputs are unavailable.");
                     Texture blitSource = i == 0 ? input : targets[i - 1];
                     foreach (var binding in pass.Bindings)
                     {
-                        Texture texture = binding.Stage == -1 ? input : binding.Stage == -2 ? binding.External : targets[binding.Stage];
+                        Texture texture = binding.Stage == -1 ? input : binding.Stage == -2 ?
+                            (binding.ResolveExternal != null ? binding.ResolveExternal() : binding.External) : targets[binding.Stage];
                         if (!texture) throw new InvalidOperationException("A required texture is unavailable.");
+                        if (texture == targets[i]) throw new InvalidOperationException("A texture aliases the current output.");
                         if (texture is RenderTexture target && !target.IsCreated())
                             throw new InvalidOperationException("A required texture has been released.");
                         pass.Material.SetTexture(binding.Property, texture);
                         if (binding.Property == "_MainTex") blitSource = texture;
                     }
+                    GL.sRGBWrite = false;
                     RenderTexture.active = targets[i]; GL.Clear(false, true, Color.clear);
                     if (pass.UsesMesh)
                     {
@@ -98,6 +121,7 @@ namespace Gallop.Live.Rendering
                         Graphics.DrawMeshNow(pass.Mesh, Matrix4x4.identity);
                     }
                     else Graphics.Blit(blitSource, targets[i], pass.Material, pass.ShaderPass);
+                    completed?.Invoke(i, targets[i]);
                 }
                 ProcessCount++; return targets[targets.Length - 1];
             }

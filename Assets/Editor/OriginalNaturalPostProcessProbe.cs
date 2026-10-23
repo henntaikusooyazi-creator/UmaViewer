@@ -11,22 +11,26 @@ public sealed class OriginalNaturalPostProcessProbe : IDisposable
 {
     [Serializable] public sealed class Result
     {
+        public string mode = "ArtificialSevenStageDiagnostic";
         public long inputRenders, lastSelectedSerial, lastRenderSerial;
-        public int rgbSamples, pixels, maxRgbError, parameterChanges, nonFarDepthSamples;
+        public int rgbSamples, pixels, maxRgbError, parameterChanges, nonFarDepthSamples, stageRgbComparisons;
+        public int stages = 7;
+        public long completedStages;
         public float minimumDepth = 1, maximumDepth;
         public bool OriginalVerified = false, runtime_contract = false;
     }
     public readonly Result Evidence = new Result();
     public OriginalLivePostProcessInputs Processor { get; }
-    readonly Material material;
+    readonly Material[] materials = new Material[7];
     OriginalPostProcessChain chain;
-    RenderTexture boundDepth;
+    RenderTexture currentDepth;
+    int width, height;
     PostEffectUpdateInfo_BloomDiffusion previous;
     public OriginalNaturalPostProcessProbe(OriginalLiveContinuousRenderer renderer)
     {
         var shader = Shader.Find("Hidden/OriginalRendering/NaturalPostProcessValidation");
         if (!shader || !shader.isSupported) throw new InvalidOperationException("Artificial frame-input shader unavailable.");
-        material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+        for (int i = 0; i < materials.Length; i++) materials[i] = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
         Processor = new OriginalLivePostProcessInputs(() => renderer.RenderingFrame, Process);
     }
     static byte[] Color(RenderTexture texture)
@@ -38,40 +42,62 @@ public sealed class OriginalNaturalPostProcessProbe : IDisposable
     {
         if (frame.RenderSerial <= Evidence.lastRenderSerial || frame.SelectedSerial < Evidence.lastSelectedSerial ||
             float.IsNaN(parameters.intensity) || float.IsInfinity(parameters.intensity)) throw new InvalidOperationException("Current frame input ordering failed.");
-        if (chain == null || boundDepth != frame.Depth)
+        if (chain == null || width != frame.Color.width || height != frame.Color.height)
         {
-            chain?.Dispose(); boundDepth = frame.Depth;
-            chain = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(material, 0, frame.Color.width, frame.Color.height, null,
-                new OriginalPostProcessChain.Binding("_MainTex", -1), new OriginalPostProcessChain.Binding("_Depth", -2, frame.Depth)));
+            chain?.Dispose(); width = frame.Color.width; height = frame.Color.height;
+            var passes = new OriginalPostProcessChain.Pass[materials.Length];
+            for (int i = 0; i < passes.Length; i++) passes[i] = new OriginalPostProcessChain.Pass(materials[i], 0, width, height, null,
+                new OriginalPostProcessChain.Binding("_MainTex", i == 0 ? -1 : i - 1),
+                new OriginalPostProcessChain.Binding("_Depth", () => currentDepth));
+            chain = new OriginalPostProcessChain(passes);
         }
-        material.SetFloat("_Parameter", parameters.intensity);
-        var result = chain.Process(frame.Source, frame.Color);
-        if (Evidence.rgbSamples < 32 && (Evidence.inputRenders < 4 || Evidence.inputRenders % 32 == 0))
+        bool sample = Evidence.rgbSamples < 32 && (Evidence.inputRenders < 4 || Evidence.inputRenders % 32 == 0);
+        byte[] expected = null; float[] depth = null;
+        if (sample)
         {
-            var before = Color(frame.Color); var after = Color(result);
+            expected = Color(frame.Color);
             var request = AsyncGPUReadback.Request(frame.Depth, 0, TextureFormat.RFloat); request.WaitForCompletion();
-            if (request.hasError) throw new InvalidOperationException("Current depth readback failed."); var raw = request.GetData<float>();
-            for (int i = 0; i < raw.Length; i++)
+            if (request.hasError) throw new InvalidOperationException("Current depth readback failed."); depth = request.GetData<float>().ToArray();
+            for (int i = 0; i < depth.Length; i++)
             {
-                float value = raw[i]; if (float.IsNaN(value) || value < 0 || value > 1) throw new InvalidOperationException("Depth is not a current raw device value.");
+                float value = depth[i]; if (float.IsNaN(value) || value < 0 || value > 1) throw new InvalidOperationException("Depth is not a current raw device value.");
                 Evidence.minimumDepth = Mathf.Min(Evidence.minimumDepth, value); Evidence.maximumDepth = Mathf.Max(Evidence.maximumDepth, value);
                 if (frame.ReversedZ ? value > .000001f : value < .999999f) Evidence.nonFarDepthSamples++;
             }
-            for (int y = frame.Color.height / 2 - 4; y < frame.Color.height / 2 + 4; y++)
-                for (int x = frame.Color.width / 2 - 8; x < frame.Color.width / 2 + 8; x++)
-                {
-                    int i = y * frame.Color.width + x; float[] add = { raw[i] * .2f, parameters.intensity * .1f, .03f };
-                    for (int c = 0; c < 3; c++) Evidence.maxRgbError = Math.Max(Evidence.maxRgbError,
-                        Math.Abs(after[i * 4 + c] - Mathf.Clamp(Mathf.RoundToInt(before[i * 4 + c] * .5f + add[c] * 255), 0, 255)));
-                    Evidence.pixels++;
-                }
-            if (Evidence.maxRgbError > 1) throw new InvalidOperationException("Current depth/parameter RGB comparison failed."); Evidence.rgbSamples++;
         }
+        RenderTexture result; currentDepth = frame.Depth;
+        try
+        {
+            result = chain.Process(frame.Source, frame.Color,
+                (stage, material) => material.SetFloat("_Parameter", parameters.intensity / materials.Length),
+                (stage, target) =>
+                {
+                    Evidence.completedStages++;
+                    if (!sample) return;
+                    var actual = Color(target);
+                    for (int y = height / 2 - 4; y < height / 2 + 4; y++) for (int x = width / 2 - 8; x < width / 2 + 8; x++)
+                    {
+                        int i = y * width + x; float[] add = { depth[i] * .2f, parameters.intensity / materials.Length * .1f, .03f };
+                        for (int c = 0; c < 3; c++)
+                        {
+                            int j = i * 4 + c;
+                            expected[j] = (byte)Mathf.Clamp(Mathf.RoundToInt(expected[j] * .5f + add[c] * 255), 0, 255);
+                            Evidence.maxRgbError = Math.Max(Evidence.maxRgbError, Math.Abs(actual[j] - expected[j]));
+                        }
+                        Evidence.pixels++;
+                    }
+                    if (Evidence.maxRgbError > 1) throw new InvalidOperationException("Current depth/parameter stage RGB comparison failed.");
+                    Evidence.stageRgbComparisons++;
+                });
+        }
+        finally { currentDepth = null; }
+        if (sample) Evidence.rgbSamples++;
         if (Evidence.inputRenders > 0 && !parameters.Equals(previous)) Evidence.parameterChanges++;
         previous = parameters; Evidence.inputRenders++; Evidence.lastRenderSerial = frame.RenderSerial; Evidence.lastSelectedSerial = frame.SelectedSerial;
         return result;
     }
-    public bool Passed => Evidence.inputRenders > 0 && Evidence.rgbSamples > 0 && Evidence.nonFarDepthSamples > 0 && Evidence.maxRgbError <= 1;
+    public bool Passed => Evidence.inputRenders > 0 && Evidence.rgbSamples > 0 && Evidence.nonFarDepthSamples > 0 && Evidence.maxRgbError <= 1 &&
+        Evidence.completedStages == Evidence.inputRenders * materials.Length && Evidence.stageRgbComparisons == Evidence.rgbSamples * materials.Length;
     public void Save(string output) => File.WriteAllText(Path.Combine(output, "frame-inputs.private.json"), JsonUtility.ToJson(Evidence, true));
-    public void Dispose() { chain?.Dispose(); UnityEngine.Object.DestroyImmediate(material); }
+    public void Dispose() { chain?.Dispose(); foreach (var material in materials) if (material) UnityEngine.Object.DestroyImmediate(material); }
 }

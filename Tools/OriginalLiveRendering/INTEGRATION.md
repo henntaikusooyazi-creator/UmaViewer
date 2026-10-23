@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 描画ごとの準備と中間出力通知
+
+`OriginalPostProcessChain.Binding(property, Func<Texture>)` は、外部textureを各drawで1回解決します。登録時にdepthがまだ存在しなくても、frame callback内で現在のdepthを返せます。null・解放済みRT・現在の出力へのaliasは描画前に拒否し、前回値へfallbackしません。従来の固定textureと前段参照も使えます。
+
+`Process(camera, input, prepare, completed)` の `prepare(stage, material)` は各段のtexture bindingより前、`completed(stage, target)` は描画直後に同期実行します。定数変換の意味は呼出し側が明示します。callback内でcopy・readbackしないRT参照は次回再利用時に変化します。例外、再入、処理中のdisposeでは成功件数を進めず、active RTとsRGB writeを復元します。callbackが変更した呼出し側所有materialの値はrollbackしません。旧2引数のProcessはcallbackなしで同じ経路を使います。
+
+公開試験は7段を2更新描き、現在のdepth・typed payload・段順序・各段のUNorm量子化後のRGBを独立したCPU式で確認します。欠落depth、自己alias、prepare／completedの例外、再入とdispose、状態復元も検証します。追加経路を含む自然入力試験は **105/105 PASS、4352画素**、後処理試験は **46/46 PASS**、Control結合は **376/376 PASS**。いずれもBuilt-in／URP14を含みます。
+
+私有の保存原作入力でも全段をprepareで設定し、現在depthを明示resolverへ渡しました。独立drawの896画素、連続生成した各中間段の896画素、最終128画素がRGBA一致しました。後二者は同じ保存参照を再評価した結果で、新しい原作観測ではありません。選択variantのmetadataから追加のparameterとtexture参照を確認しましたが、metadata上の対応をtimelineからCBを生成する演算の証明へ昇格していません。特にPostFilm関連の自然更新が現在のpayloadにありません。
+
+自然probeは人工式を7段へ適用します。各段は `color.rgb * 0.5 + (depth * 0.2, intensity / 7 * 0.1, 0.03)` で、その直後にUNormへ書きます。CPU比較は入力から各段の量子化を順に評価します。原作programの自然供給ではありません。最大32 camera入力をsampleし、各入力の元color・depthと7段の出力をreadbackする上限です。結果のmode、段数、全段の完了数、段別比較数もwrapperで検査します。
+
+現コードでの自然再生は142秒を完走し、7372/7372 owner更新、左右同時有効58/58更新、116入力・812段、49比較・6272画素、最大RGB差1 byteを確認しました。自然終端・Viewer復帰、初回late-only 1回の保留、fault 0を含む独立した新runです。原作の時刻原点や7段の自然定数変換を確定する結果ではありません。
+
 ## 自然cameraのdepthとtimeline payload
 
 `OriginalCameraProducer.SetInputFramePostProcessor(processor, depthCopyShader)` と連続rendererの同名APIは、colorに加えて今回のdepthを要求する明示経路です。旧 `SetInputPostProcessor` と排他的で、どちらも未登録なら従来経路を使います。`IOriginalCameraFramePostProcessor.Process` にはproducer所有の `OriginalCameraFrame` を渡します。RTは次の描画で再利用されるため、そのcallback内で消費・copyしてください。serialは保存画像の不変性を保証しません。
@@ -10,7 +24,7 @@ Controlの既存Bloom／Diffusion通知の直前に、発行するstructを `Ori
 
 追加の公開人工試験は、実Controlのpayloadを使ったbridge保持、欠落時のUnknown、異なるserialの拒否と、上下でdepthが異なる人工geometry、複数更新のnear／farを検証しました。Built-in／URP14合計 **45/45 PASS、768画素** です。投影から計算したdepthと実depthが一致し、depthとcolorの上下関係も確認しました。source cameraの状態、中央下地の迂回と解除も検証しています。既存の公開postprocess **32/32**、Control結合 **376/376** は独立した再検証です。
 
-`Invoke-IntegrationValidation.ps1 -NaturalPostProcessOnly` はこのfull Viewer人工試験を実行します。`Invoke-NaturalPlaybackValidation.ps1 -FrameInputs` は、通常の自然再生検証へ明示的な人工RGB probeを追加します。通常UIの描画には自動登録しません。probeは `color.rgb * 0.5 + (depth * 0.2, intensity * 0.1, 0.03)` を実chainへ渡し、入力・出力の限定readbackを独立したCPU式と比較します。係数は人工値であり、原作後処理の演算・設定を表しません。readbackは最大32回に制限します。
+`Invoke-IntegrationValidation.ps1 -NaturalPostProcessOnly` はこのfull Viewer人工試験を実行します。`Invoke-NaturalPlaybackValidation.ps1 -FrameInputs` は、通常の自然再生検証へ明示的な人工RGB probeを追加します。通常UIの描画には自動登録しません。初版の単一段probeは `color.rgb * 0.5 + (depth * 0.2, intensity * 0.1, 0.03)` を使用しました。現在の7段版とreadback上限は上節を参照してください。どちらも係数は人工値であり、原作後処理の演算・設定を表しません。
 
 今回の「うまぴょい伝説」は142秒を完走し、7851 owner更新を7851回描画、左右同時有効63/63更新、初回late-only 1回の保留、楽曲終了後のViewer復帰、物理初期化の既存opt-outを確認しました。126 input renderに同じ更新のdepthとpayloadを供給し、typed payloadの変化2回、非far depthを確認しています。7回・896画素の人工RGB比較は最大差1 byte、renderer／provider faultは0でした。旧72更新や65更新の別再生結果を書換えず、可変frame数だけで非退行を判断しません。
 

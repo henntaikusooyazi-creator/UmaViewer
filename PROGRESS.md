@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 各段の入力更新と中間RGB比較
+
+既存chainへ、描画ごとの定数準備、現在の外部textureの解決、描画直後の出力通知を追加しました。現在depthを前回の参照で補完せず、右・左cameraの各同期callback内で解決できます。通知先はRTが再利用される前にcopy・readbackします。従来の引数だけで呼ぶ経路は保持しています。
+
+保存shaderの共通metadataに加えて選択variantのparameter情報を調べ、混合段のdepth・camera color・前段出力の参照を対応付けました。混合段にはBloom／Diffusion以外のPostFilm関連入力も必要で、現在の自然payloadだけでは全定数を生成できません。名前や保存値の近さから変換式を採用していません。
+
+公開人工GPU試験はBuilt-in／URP14合計 **105/105 PASS、4352画素**。同じ更新のdepth・typed payloadを7段へ渡し、各UNorm書込み後のRGBをCPU式と比較しました。後処理の独立試験 **46/46** とControl結合 **376/376** もPASSです。保存原作入力の私有試験では、独立7 drawの **896/896画素** と、連続生成した7段の中間出力 **896/896画素** がRGBA一致しました。後者は同じ保存参照の再評価であり、新しい原作観測数へ加算しません。私有試験はBuilt-in D3D11です。
+
+自然再生の追加probeも7段の人工演算を使います。これは段ごとの入力更新とRGB比較の診断であり、原作7段の自然CB生成ではありません。原作の追加runは行っていません。最後のshader identity、PostFilmの自然供給、Bloom／Diffusionからの複合定数生成、同一原作frameのRGB一致は未確定です。[APIと証拠の境界](Tools/OriginalLiveRendering/INTEGRATION.md#描画ごとの準備と中間出力通知) を参照してください。
+
+現ソースで「うまぴょい伝説」142秒の自然終端・Viewer復帰まで再検証し、**7372/7372更新**を描画しました。左右同時有効 **58/58更新**、camera入力116回・812段が完了しています。7入力×7段の49比較、**6272画素**で人工式との差は最大1 byte、renderer／provider faultは0でした。初回late-only 1回は別に保留しています。前回7851更新とは別runで、更新件数の大小から非退行や原作同期を判定しません。私有の連続7段比較では、各段の比較領域への範囲外sampleと無効入力伝播も0を確認しました。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## 自然depthとtimeline値の連続供給
 
 明示opt-inのframe postprocessorを追加しました。今回描いたViewer cameraのcolor・raw device depth、render serial、selected serial、view／GPU projection、near／farを同じcallbackへ渡します。実Controlがその更新で発行したBloom／Diffusion payloadもbridgeに値として保存し、selected camera・owner観測・serialが揃った場合だけ消費します。未通知の値を前回から補完しません。

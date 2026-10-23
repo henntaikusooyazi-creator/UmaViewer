@@ -50,6 +50,19 @@ public static class OriginalPostProcessValidation
                 producer.SetInputPostProcessor(new Callback { Apply = (c, t) => null }); Reject<InvalidOperationException>(() => producer.RenderInput(camera));
                 producer.SetInputPostProcessor(null); Check(producer.RenderInput(camera) == raw, "Detaching restores the established path.");
                 Reject<ArgumentException>(() => new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(a, 0, 64, 32, null, new OriginalPostProcessChain.Binding("_MainTex", 0))));
+                Texture current = raw;
+                using (var dynamic = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(a, 0, 64, 32, null,
+                    new OriginalPostProcessChain.Binding("_MainTex", -1), new OriginalPostProcessChain.Binding("_OtherTex", () => current))))
+                {
+                    Reject<InvalidOperationException>(() => dynamic.Process(camera, raw, (i, m) => { throw new InvalidOperationException("prepare"); }, null));
+                    Reject<InvalidOperationException>(() => dynamic.Process(camera, raw, null, (i, t) => dynamic.Process(camera, raw)));
+                    Reject<InvalidOperationException>(() => dynamic.Process(camera, raw, null, (i, t) => dynamic.Dispose()));
+                    Check(dynamic.ProcessCount == 0 && RenderTexture.active == sentinel && GL.sRGBWrite, "Callback faults do not count success or leak render state.");
+                    dynamic.Process(camera, raw, null, (i, t) => current = t);
+                    Reject<InvalidOperationException>(() => dynamic.Process(camera, raw));
+                    Check(dynamic.ProcessCount == 1, "Dynamic self-alias is rejected before drawing.");
+                    current = null; Reject<InvalidOperationException>(() => dynamic.Process(camera, raw));
+                }
             }
             Check(a && b, "Caller-owned programs survive chain disposal.");
         }

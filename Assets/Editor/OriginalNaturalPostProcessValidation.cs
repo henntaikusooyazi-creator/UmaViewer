@@ -58,6 +58,72 @@ public static class OriginalNaturalPostProcessValidation
         public float WorldDepth;
         public float FarWorldDepth;
     }
+    static void SevenStages(OriginalCameraProducer producer, Camera source, OriginalLiveTimelineBridge bridge)
+    {
+        // This conversion is deliberately artificial. Original CB generation is
+        // not inferred from similarly named fields or these fixture values.
+        var passes = new OriginalPostProcessChain.Pass[7];
+        OriginalCameraFrame current = default;
+        RenderTexture rawInput = null;
+        int resolves = 0, prepared = 0, completed = 0;
+        for (int i = 0; i < passes.Length; i++)
+        {
+            var material = Own(new Material(Shader.Find("Hidden/OriginalRendering/PostProcessValidation")));
+            passes[i] = new OriginalPostProcessChain.Pass(material, 0, 64, 32, null,
+                new OriginalPostProcessChain.Binding("_MainTex", i == 0 ? -1 : i - 1),
+                new OriginalPostProcessChain.Binding("_OtherTex", () => { resolves++; return current.Depth; }));
+        }
+        using (var chain = new OriginalPostProcessChain(passes))
+        {
+            var adapter = new OriginalLivePostProcessInputs(() => bridge.LastFrame, (frame, payload) =>
+            {
+                current = frame;
+                rawInput = frame.Color;
+                try
+                {
+                    var before = Read(frame.Color); var depth = Depth(frame.Depth);
+                    var expected = new int[before.Length]; for (int i = 0; i < before.Length; i++) expected[i] = before[i];
+                    return chain.Process(frame.Source, frame.Color, (stage, material) =>
+                    {
+                        Check(stage == prepared % 7, "Pass preparation follows stage order."); prepared++;
+                        material.SetVector("_Gain", new Vector4(.5f, .5f, .5f, 1));
+                        material.SetVector("_OtherGain", new Vector4(.125f, 0, 0, 0));
+                        material.SetVector("_Offset", new Vector4(0, payload.intensity * (stage + 1) * .01f, 0, 0));
+                    }, (stage, output) =>
+                    {
+                        var actual = Read(output); int max = 0;
+                        for (int y = 12; y < 20; y++) for (int x = 24; x < 40; x++)
+                        {
+                            int p = y * 64 + x;
+                            float[] add = { depth[p] * .125f, payload.intensity * (stage + 1) * .01f, 0 };
+                            for (int c = 0; c < 3; c++)
+                            {
+                                int j = p * 4 + c;
+                                expected[j] = Mathf.Clamp(Mathf.RoundToInt(expected[j] * .5f + add[c] * 255), 0, 255);
+                                max = Math.Max(max, Math.Abs(actual[j] - expected[j]));
+                            }
+                            max = Math.Max(max, Math.Abs(actual[p * 4 + 3] - before[p * 4 + 3])); report.pixels++;
+                        }
+                        Check(max <= 1 && stage == completed % 7, "Current depth and payload agree with each quantized RGB stage."); completed++;
+                    });
+                }
+                finally { current = default; }
+            });
+            producer.SetInputFramePostProcessor(adapter, Shader.Find("Hidden/OriginalRendering/DepthCopy"));
+            for (int n = 0; n < 2; n++)
+            {
+                bridge.CaptureOwnerTimes(3 + n, 2 + n); bridge.BeginFrame(180 + n * 60);
+                bridge.CaptureSelected(0, 180 + n * 60, new LiveTimelineKeyMultiCameraPositionData(), null, null, source);
+                bridge.CapturePostEffect(new PostEffectUpdateInfo_BloomDiffusion { intensity = .25f + n }); bridge.CompleteFrame();
+                producer.RenderInput(source, bridge.LastFrame.Serial);
+            }
+            Check(resolves == 14 && prepared == 14 && completed == 14 && chain.ProcessCount == 2, "All seven stages resolve and prepare anew for both updates.");
+            var active = RenderTexture.active; bool srgb = GL.sRGBWrite; int count = chain.ProcessCount;
+            bool rejected = false; try { chain.Process(source, rawInput); } catch (InvalidOperationException) { rejected = true; }
+            Check(rejected && chain.ProcessCount == count && RenderTexture.active == active && GL.sRGBWrite == srgb, "Missing current depth has no stale texture fallback and restores state.");
+            producer.SetInputFramePostProcessor(null, null);
+        }
+    }
     static void Pipeline(bool urp)
     {
         if (urp) { var data = Own(ScriptableObject.CreateInstance<UniversalRendererData>()); var asset = Own(UniversalRenderPipelineAsset.Create(data)); asset.msaaSampleCount = 1; asset.supportsHDR = false; GraphicsSettings.defaultRenderPipeline = asset; QualitySettings.renderPipeline = asset; }
@@ -102,6 +168,7 @@ public static class OriginalNaturalPostProcessValidation
             bridge.CaptureOwnerTimes(2, 1); bridge.BeginFrame(120); bridge.CaptureSelected(0, 120, new LiveTimelineKeyMultiCameraPositionData(), null, null, source); bridge.CompleteFrame();
             rejected = false; try { producer.RenderInput(source, bridge.LastFrame.Serial); } catch (InvalidOperationException) { rejected = true; }
             Check(rejected && adapter.ProcessCount == 1 && adapter.LastParameters.intensity == .75f, "Missing payload is rejected without reusing the preceding value.");
+            SevenStages(producer, source, bridge);
         }
         plane.SetActive(false); far.SetActive(false); source.gameObject.SetActive(false);
     }

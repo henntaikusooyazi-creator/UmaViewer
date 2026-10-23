@@ -23,3 +23,5 @@ Unity 2022.3.62f3、Windows D3D11、URP14.0.12を使用します。`Prepare-Vali
 
 full Viewerでは `Invoke-IntegrationValidation.ps1 -UnityExecutable <Unity.exe> -OutputPath <repo外の新規結果先> -PostProcessOnly` を使います。通常の結合検証とは別実行で、保存された原作入力の引数は併用できません。小規模projectにも同じ人工試験をコピーします。その場合は `-executeMethod OriginalPostProcessValidation.Run -integrationOutput <repo外の結果先>` で実行してください。詳細は [INTEGRATION.md](INTEGRATION.md#明示した後処理chainの接続とrgb比較) を参照してください。
 同じ更新のdepth／typed parameter検証はfull Viewerの `Invoke-IntegrationValidation.ps1 -NaturalPostProcessOnly` を使います。自然再生への人工probe追加は `Invoke-NaturalPlaybackValidation.ps1 -FrameInputs` の明示指定です。原作の自然CB供給やRGB一致を確定する試験ではありません。
+
+現在の試験は7段それぞれへの定数準備、現在textureの解決、描画直後のRGB照合も行います。`-FrameInputs` の自然probeは7段の人工演算です。結果の `mode`、完了段数と段別比較数を検査し、保存原作programの自然供給とは区別します。APIは [描画ごとの準備と中間出力通知](INTEGRATION.md#描画ごとの準備と中間出力通知) を参照してください。

@@ -61,8 +61,11 @@ $summary = Get-Content -Raw -LiteralPath (Join-Path $output 'playback.private.js
 if ($summary.status -ne 'NaturalViewerPlaybackCompleted') { throw 'Natural Viewer playback acceptance failed.' }
 if ($FrameInputs) {
     $inputs = Get-Content -Raw -LiteralPath (Join-Path $output 'frame-inputs.private.json') | ConvertFrom-Json
-    if ($inputs.inputRenders -le 0 -or $inputs.rgbSamples -le 0 -or $inputs.pixels -le 0 -or
-            $inputs.nonFarDepthSamples -le 0 -or $inputs.maxRgbError -gt 1) {
+    if ($inputs.mode -ne 'ArtificialSevenStageDiagnostic' -or $inputs.stages -ne 7 -or
+            $inputs.inputRenders -le 0 -or $inputs.rgbSamples -le 0 -or $inputs.pixels -le 0 -or
+            $inputs.nonFarDepthSamples -le 0 -or $inputs.maxRgbError -gt 1 -or
+            $inputs.completedStages -ne ($inputs.inputRenders * 7) -or
+            $inputs.stageRgbComparisons -ne ($inputs.rgbSamples * 7)) {
         throw 'Current-frame depth/parameter RGB evidence did not pass.'
     }
 }
