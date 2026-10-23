@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 右入力の観測準備と未ARM終了
+
+右の先行versionを取得するため、ローカル専用の明示観測モードを資格化しました。同じrunのreceiverから解決した入力RTを先行更新で確認し、次の実更新だけでcamera ID・task・writer・Resolve・消費drawを結ぶ設計です。左のIDや共有RTのpointerだけから右の帰属を決めません。
+
+閉鎖環境では従来モード625件、右用モード625件、wire入力26件を確認しました。両モードの件数は別の構成で、Viewerの376/376・1868/1868へ加算しません。実機の限定起動では字幕workerの待機条件が成立せず、ARMを発行していません。**右cameraの新しい原作証拠は未取得**です。
+
+ゲームの通常終了後に所有配備を復元し、元のPending判定を保持しました。実行時の保持handleによる復旧成功へ昇格しません。失敗時の既存字幕スコアを有限に保存する補助処理も閉鎖20件で検証しましたが、実UIでの再検証は未実施で、字幕失敗の原因を解決したとは判定しません。[観測条件と残件](Tools/OriginalLiveRendering/INTEGRATION.md#右入力の先行versionの観測準備) を参照してください。
+
+今回の公開変更も文書のみです。左右の既存camera選択、renderer、shader、自然TextureMapping、各false／Unknownと過去の成功・Pendingは維持します。
+
 ## 左入力のcamera帰属を限定確認
 
 新たな原作の限定観測で、左入力のResolve前に保存したresource writerを、同じ描画キュー範囲のrender-taskへ一意に接続しました。taskが保持するculling contextの一致とcamera IDを確認し、同じrunの左receiverが参照するcameraと一致しました。観測したwriter部分についての帰属であり、画像に寄与した全描画の帰属を証明するものではありません。
