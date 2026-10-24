@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 実pass引数とCommandBuffer keyword順序
+
+限定原作観測の7 drawについて、実行時pass引数を同一run・更新・一意なqueue範囲のGPU drawへ結びました。混合段は従来の候補passと一致しました。標準書戻しは全pass指定であり、実引数をliteralなpass zeroへ読み替えません。別の限定観測では、混合drawのpassと18 keywordの入力状態を同じconsumerへ結びました。保存assetの宣言keyword集合とは完全一致しないため、実program選択とkeyword未指定時の処理は分けて判定します。
+
+最終runでは、その混合drawについて、実pass・keyword入力・全bytecode一致したPS生成object・GPU消費を同一runで結びました。保存asset内では実passに対応するPS aliasが一意です。これは単一drawのPS対応であり、keyword選択の内部分岐、VS／sampler全体、他のvariant、同一frameのViewer RGB一致まで確定した結果ではありません。宣言keyword名を実際の有効bitへ読み替えず、保存候補を通常ライブへ自動登録しません。
+
+`OriginalPostFilmRouteAudit` に、明示した開始global集合へ既存の設定／解除順を適用するEditor専用監査を追加しました。MODE／blendはCommandBufferへ積むglobal命令なので、materialのkeyword一覧だけでは描画時状態を説明できません。開始状態が欠けた場合を空集合で補完せず、material localとglobalを別に扱います。通常rendererへの登録やkeyword writerの追加はありません。
+
+公開人工監査は **97/97 PASS**。既存 `Render.Blit` の2 drawを実行するD3D11試験で、pass選択・保持global・独立したmaterial keywordの組合せを検証し、**64/64画素RGBA完全一致**。公開Control結合も **376/376 PASS** でした。原作の同一frame RGB比較や142秒自然previewを再実行した結果ではありません。全false／Unknown gateと過去Pendingを保持します。
+
 ## 演出keyからpass／keyword候補への対応表
 
 保存したmusic1001のFilm252 keyとBloom／Diffusion108 keyを、frame・layer・authored multi-camera番号・mode・color type別のローカル表へ整理しました。Filmのserialized payload252件は復元前後で一致しています。境界前後と区間内の **918サンプル**を実Controlの選択・補間処理へ渡し、全件で評価値を取得しました。うち332件は補間を使用しています。明示audit cameraと保存typed dataのreplayであり、自然再生や原作時刻との同期ではありません。

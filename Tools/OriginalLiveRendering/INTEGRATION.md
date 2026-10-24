@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## CommandBufferのkeyword順序と実pass引数
+
+`OriginalPostFilmRouteAudit.CaptureGlobalTransition(evaluatedFilm, basePass, initialGlobalKeywords)` は、呼出し側が明示した開始global集合に、既存の `Render.Apply` が記録する設定／解除だけを適用します。入力を変更せず、Film描画なしでは集合を保持します。開始集合が未取得の場合に空集合で補完せず、未実行CommandBufferの状態を `Material.shaderKeywords` や現在のglobal getterから推測しないでください。
+
+MODE／blendの変更はCommandBufferのglobal命令です。material側のlocal keyword、他の保持global、先行する未実行命令は別の状態です。このAPIはUnityの最終variantを解決せず、原作の観測値としても扱いません。既存のslot zero保持はそのままです。
+
+人工監査は **97/97 PASS**。既存の `ScreenOverlayRender.Render.Blit` を実行するGPU試験では、1 buffer内の2 draw、inverseによるpass選択、保持globalの有無、独立したmaterialの `COLOR_ONLY` を組み合わせ、**64/64画素のRGBAが完全一致**しました。記録時と実行後のglobal状態、後の命令が先のdrawへ遡及しないことも確認しました。Built-in D3D11の人工shaderによる試験です。公開Control結合も **376/376 PASS**。実行方法は下記のroute監査と同じです。
+
+新規の限定原作観測では、対象7 drawそれぞれを同一run・更新・一意なqueue範囲のnative描画引数へ対応付けました。混合段の候補passが実引数とも一致する一方、最後の標準書戻しは全pass指定であり、literalなpass zeroと同一扱いしません。別の限定観測では、混合drawの実passと18 keywordの名前・global対応表・material側bitを同じconsumerへ結びました。描画前後で比較したのはspace／mask headerと参照global wordであり、全writer閉包の証明ではありません。
+
+実keyword入力の有効集合と保存assetの宣言keyword集合は完全一致しませんでした。候補表の一意性だけで実variantへ昇格させず、keyword未指定時の選択と実program消費を別に確認します。今回の単一更新を、全楽曲・全918評価・自然keyword writerの成立へ拡張しません。
+
+最終runでは混合drawのPSを限定し、全bytecode一致による生成object、保持reference、生成時刻がdrawより前であること、GPUの実PS objectを照合しました。同じdrawの実passにより、保存asset内のPS aliasも一意になりました。実keyword入力と宣言keyword集合の差はそのまま残ります。内部のfallback選択分岐そのもの、最後のcopy shader identity、全variantのproducer契約は未確定です。
+
 ## 評価済みFilmのcode route監査
 
 Editor専用の `OriginalPostFilmRouteAudit.Capture(evaluatedFilm, basePass)` は、評価済み `PostFilmUpdateInfo` と呼出し側が資格化したbase passを受け取ります。現在の `ScreenOverlayRender.Parameter.IsValidity` とkeyword配列を読み、有効なFilmのpass加算とMODE設定／解除、通常color layerで解除されるblend keywordを返します。keyword配列のslot zeroが保持される動作も変更しません。無効FilmはFilm描画なしとして返し、別のdefault／copy経路を補完しません。

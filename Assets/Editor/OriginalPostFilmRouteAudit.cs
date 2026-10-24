@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Gallop.ImageEffect;
@@ -49,5 +50,40 @@ public static class OriginalPostFilmRouteAudit
         route.disabledBlendKeywords = blend.Skip(1).ToArray();
         route.retainedBlendSlot = blend[0]; // SetShaderKeyword(0) does not clear slot zero.
         return route;
+    }
+
+    [Serializable] public sealed class GlobalTransition
+    {
+        public string scope = "CurrentViewerCommandBufferCodeOnly; explicit initial global keywords";
+        public Route route;
+        public string[] before, after;
+        public bool runtime_contract = false, OriginalVerified = false;
+    }
+
+    // Apply records global keyword commands. Material.shaderKeywords alone
+    // cannot supply their initial state or account for commands queued earlier.
+    // This models just those commands; it never resolves Unity's variant.
+    public static GlobalTransition CaptureGlobalTransition(PostFilmUpdateInfo value,
+        int basePass, IEnumerable<string> initialGlobalKeywords)
+    {
+        if (initialGlobalKeywords == null) throw new ArgumentNullException(nameof(initialGlobalKeywords));
+        var keywords = new HashSet<string>(StringComparer.Ordinal);
+        int count = 0;
+        foreach (var keyword in initialGlobalKeywords)
+        {
+            if (++count > 256 || string.IsNullOrWhiteSpace(keyword) || keyword.Length > 128 ||
+                keyword.Any(char.IsWhiteSpace) || !keywords.Add(keyword))
+                throw new ArgumentException("A bounded, unique explicit global keyword set is required.", nameof(initialGlobalKeywords));
+        }
+        var route = Capture(value, basePass);
+        var before = keywords.OrderBy(k => k, StringComparer.Ordinal).ToArray();
+        if (route.filmDraw)
+        {
+            keywords.ExceptWith(route.disabledModes);
+            keywords.ExceptWith(route.disabledBlendKeywords);
+            if (route.enabledMode != null) keywords.Add(route.enabledMode);
+        }
+        return new GlobalTransition { route = route, before = before,
+            after = keywords.OrderBy(k => k, StringComparer.Ordinal).ToArray() };
     }
 }

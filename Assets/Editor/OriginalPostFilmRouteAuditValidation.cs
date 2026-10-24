@@ -44,6 +44,7 @@ public static class OriginalPostFilmRouteAuditValidation
             value.filmPower = float.NaN; reject(() => OriginalPostFilmRouteAudit.Capture(value, 40)); value.filmPower = 1;
             value.color0 = new Color(1, 1, 1, float.PositiveInfinity); reject(() => OriginalPostFilmRouteAudit.Capture(value, 40)); value.color0 = Color.white;
             reject(() => OriginalPostFilmRouteAudit.Capture(value, -1)); reject(() => OriginalPostFilmRouteAudit.Capture(value, int.MaxValue));
+            OriginalPostFilmKeywordValidation.Check(check);
         }
         catch (Exception e) { report.failure = e.ToString(); Debug.LogException(e); exit = 1; }
         finally
