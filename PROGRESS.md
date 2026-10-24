@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## MipBiasのproducer接続
+
+原作の対応methodを限定metadata採取へ結び、幅比のfloat32演算、double対数、float32への変換、temporal値とのmin、gain生成の順序を確認しました。`OriginalPostProcessSamplingMath` は確認した算術を明示入力から実行します。保存MipBiasを既定値として補いません。
+
+`OriginalCameraFrame` には、targetが束縛されているprivate render cameraのpixel幅、現在のdynamic幅scale、URPの現在temporal値、stereo状態を追加しました。temporal値はsource cameraのcomponentや古いshader globalから流用せず、設定が存在しなければnullです。既存の描画経路・constructor引数は維持しています。
+
+公開人工試験はBuilt-in／URP14で **53/53 PASS、256画素RGBA一致**。異なる色を持つmipを実際に選択し、float32除算の丸め位置、dynamic scale、temporal値、現在frameへの伝搬と不正入力の拒否を確認しました。私有source撤去後の既存Control結合も **376/376 PASS**。私有の保存入力比較では、明示した等倍・temporalゼロ条件で **24/24成分がbit一致**し、独立7 drawの896画素、連続中間896画素、最終128画素のRGBA一致を維持しました。24成分は同じ状態を各段で検査した件数で、原作の同一更新からCPU camera入力を直接採取した証拠ではありません。
+
+選択programの87参照中、MipBiasの6参照を保存値からproducer算術へ移しました。残るCB上の明示retained参照はUV scroll、Dimmer、書戻しUV／tintの4参照です。83/87は全CB成分の自然生成率ではなく、参照単位の分類です。投影context、variant／sampler、自然TextureMapping、時刻原点と原作同一frameのRGB一致は別に未確定です。[供給条件と検証](Tools/OriginalLiveRendering/INTEGRATION.md#mipbiasの現在入力供給) を参照してください。
+
+最終ソースで「うまぴょい伝説」**142秒**を自然終端・Viewer復帰まで確認しました。**7905/7905更新**を描画し、左右同時有効 **59/59更新**、fault／例外0、初回late-only 1回は別に保留です。118 camera入力全てで現在のURP temporal値と幅情報からsamplingを生成し、**826段**へ供給しました。保存MipBias使用は0件、8回の内部GPU replayは **2727936/2727936画素の全RGBA一致**です。この再生のbiasは0で、非ゼロbiasによるmip選択の検証は人工試験に属します。先行runのbackendガードによる全保留は成功扱いにせず、自然完走と7段処理の受入条件も分離しました。
+
+今回の原作runはStopCompleted、保持handle復旧、hook復元・drain・pin照合、通常終了後の所有配備復元まで確認しました。過去Pendingを変更しません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## Fullscreen draw状態の再生成
 
 `OriginalPostProcessDrawState` を追加しました。現在のcamera入力・render serial・selected serialへ結んだ状態から、明示したfullscreen用model／view／projectionと現在のtexture寸法を使い、GPU view-projectionと符号付きtexel情報を生成します。映像を生成したcameraの投影をfullscreen描画へ流用しません。既存renderer・chainの既定動作は保持し、明示した利用側だけが採用します。

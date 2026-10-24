@@ -1,5 +1,21 @@
 # 実Controlによる独立結合検証
 
+## MipBiasの現在入力供給
+
+`OriginalPostProcessSamplingMath.EvaluateMipBias(pixelWidth, targetWidth, dynamicWidthScale, temporalMipBias)` は明示した4入力からbias／gainを生成します。target幅とdynamic scaleのfloat32積、pixel幅とのfloat32除算、doubleの対数・符号反転、float32への変換、上限ゼロとtemporal値のminという境界を保持します。非有限値、非正の寸法・scale、積のoverflowや比のunderflowは拒否します。
+
+`OriginalCameraFrame.PixelWidth` はprivate render cameraにtargetが束縛されている間に取得します。`DynamicWidthScale` は同じcameraのdynamic-resolution設定に応じた値です。`TemporalMipBias` はそのrender cameraのURP設定が存在する場合だけ値を保持し、未供給をゼロに読み替えません。`StereoEnabled` も同じcameraの観測です。source cameraの追加componentを複製するAPIではありません。
+
+`frame.Color.width` は要求した出力幅であり、任意のURP内部descriptor幅の代用ではありません。利用側はrender scale、XR、target／descriptor対応を資格化してください。今回の私有自然接続では非stereo・URP render scale 1の範囲で現在temporal値を使用し、欠落・対象外backendを保留します。Built-inで同じ算術を使う場合も、temporal依存は呼出し側の明示policyが必要です。Bloom等の縮小passの幅をcamera用の幅へ代入しません。
+
+`Invoke-IntegrationValidation.ps1 -PostProcessSamplingOnly` は人工試験です。通常／縮小／dynamic幅、temporalの優先、非2冪の比でのfloat丸め、異なるmip色のGPU選択、現在のprivate camera由来の値とsource camera設定との分離を確認し、Built-in／URP14合計 **53/53 PASS、256画素RGBA一致**でした。他の専用modeや観測profile指定との混在はEditor起動前に拒否します。
+
+原作側の対応methodは今回の正常終了runでmetadata／実prologへ結び、限定した命令と数値依存を確認しました。既存原作保存入力に対して、等倍・temporalゼロの明示contextで再生成した24成分がGPU保存値とbit一致しました。これは同一更新のCPU cameraDataを保存した検証ではありません。7 drawの独立896画素、連続中間896画素、最終128画素のRGBA一致は同じ保存観測の再評価です。観測数へ合算しません。
+
+最終自然再生は142秒、7905/7905描画、左右同時59/59、Viewer復帰・fault／例外0でした。118入力全てでrender cameraの現在URP temporal値を観測し、前回値やBuiltin用policyを代用せず826段へsamplingを供給しました。内部replayは8回・2727936画素RGBA一致です。実測biasは0であり、自然な非ゼロbiasや原作同一frameのmip/RGB一致まで示す結果ではありません。最初の全保留runは別に保持し、私有wrapperは7段の実処理数・sampling供給数・backend保留0・内部replay一致も要求します。再生が完走しただけでは後処理の成功になりません。
+
+MipBiasに対応する6参照をproducerへ移しても、UV scroll、Dimmer、書戻しUV／tint、projection生成元、variant／samplerまで確定したことにはなりません。原作同一frameの自然RGB一致は未証明で、全false／Unknown gateと過去Pendingを維持します。
+
 ## Fullscreen draw状態の生成
 
 `OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped)` は、同期frame callback内で使用します。fullscreen用の明示model／view／projectionから `ObjectToWorld` と現在backendの `GpuViewProjection` を生成し、そのdrawが読むtextureの現在寸法から `TexelSize` を生成します。Y符号は呼出し側が明示します。`frame.Projection` はcamera映像の生成に使った行列であり、fullscreen用として自動採用しません。
