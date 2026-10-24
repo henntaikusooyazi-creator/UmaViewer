@@ -1,5 +1,17 @@
 # 実Controlによる独立結合検証
 
+## 現在materialのvector取得
+
+`OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped, uvScale, uvOffset, vectorSource, vectorProperty)` は、指定materialに宣言されたColor／Vector propertyの現在値を `MaterialVector` に保持します。shader既定値も、現在のmaterialから取得します。property欠落、Float／Texture等の型、非有限値は拒否し、白色やglobal値で補完しません。従来overloadの `MaterialVector` はnullです。
+
+値はraw vectorで、色空間変換、MaterialPropertyBlock、global overrideの解決は含みません。materialは呼出し側が所有します。同期prepareで `ValidateCurrent(frame, input)` を実行し、既存のcamera／serial／texture検証とともに、material解放、shader変更、property値の変更を検出してください。変更後に描画する場合は、そのdraw用に再取得します。RT内容の凍結や、外部状態のrollbackを行うAPIではありません。
+
+`-PostProcessDrawOnly` の公開人工GPU試験はBuilt-in／URP14で **314/314 PASS、2112画素RGBA一致**。従来UV試験に加え、materialの既定値と更新した非白色・alpha・ゼロ値を実際のGPU入力へ接続しました。微小なproperty変更、shader変更、解放、欠落、型不一致、非有限4成分の拒否も確認しました。私有source退避後の既存Control結合は376/376 PASSです。
+
+私有候補7段の書戻しでは、現在のコピー用material propertyを毎入力で取得し、保存tintをcontextから除去しました。限定原作runの同一drawでは、shader既定state→現在state→実PS定数の色4成分がbit一致しています。そのrunの保存入力replayはdraw248成分・producer49成分bit一致、独立896・連続中間896・最終128画素RGBA一致、invalid sample 0でした。生成API identityや全variantの一致は未証明です。
+
+最終ソースの142秒自然再生は7437描画、左右同時53更新、対象106入力すべてで現在tint供給、保存tint使用0、742段、内部replay2727936画素RGBA一致、終端・Viewer復帰・fault／例外0でした。原作との自然な非白色tint遷移や同一frame RGB一致へ拡張しません。静的register参照の分類は現在85／retained 2で、残るUV scroll・Dimmerと、全false／Unknown gate・過去Pendingを維持します。
+
 ## 現在drawの書戻しUV引数
 
 `OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped, uvScale, uvOffset)` は、当該draw commandの明示UV引数を `UvScaleOffset=(scale.x, scale.y, offset.x, offset.y)` として保持します。非有限値を拒否し、既存の `ValidateCurrent` でcamera、render／selected serial、textureと寸法の一致を検証します。引数を持たない従来overloadは単位scale・ゼロoffsetを使用し、既存の行列とtexel値は変更しません。利用側は同期prepare内で、そのdrawが実際に使う引数を与えてください。

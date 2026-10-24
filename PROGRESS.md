@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 書戻しtintの現在material供給
+
+書戻しtintを、保存値から現在のmaterial propertyへ置き換えました。原作の限定観測では、標準コピー用material、shader既定state、現在state、実際の書戻しdrawを同一frame・同一queueの一意な命令範囲で対応付け、名前で特定した色propertyの4成分がPS定数とbit一致しました。初期化のCPU処理と組込みshader資産も確認しています。新しいshader生成APIの同一run identityや、全コピー経路の資格化には拡張しません。
+
+`OriginalPostProcessDrawState.Capture` に、呼出し側が所有するmaterialとproperty名を渡すoverload、nullableな `MaterialVector` を追加しました。現在のraw vectorを同期取得し、欠落・型不一致・非有限値を拒否します。使用直前にはframe／入力に加え、materialの解放、shader変更、property値の変更を検出します。従来overloadでは値を補完せず、`MaterialVector` は未指定のままです。色空間変換は推測しません。
+
+公開人工GPU試験はBuilt-in／URP14で **314/314 PASS、2112/2112画素RGBA一致**。shader既定値、非白色の明示値、alpha、ゼロ値と拒否条件を確認しました。私有source退避後の公開Control結合も **376/376 PASS**。今回採取した原作入力では、draw情報248成分・CPU producer49成分がbit一致し、独立7 draw896画素、連続中間896画素、最終128画素のRGBA一致を確認しました。独立処理と連続処理は同じ観測の再評価です。
+
+最終ソースの自然再生は **142秒、7437/7437描画、左右同時53/53更新**で終端・Viewer復帰しました。対象106 camera入力すべてに現在materialからtintを供給し、保存tint使用0、7段742回、内部replay2727936画素RGBA一致、fault／例外0でした。原作の非白色tint遷移や、自然再生同士の同一frame RGB一致を示すものではありません。
+
+87個の段別unique register参照は現在producer／draw85、明示retained 2です。残るeffect globalはUV scrollとDimmerで、全定数の自然生成率を表しません。最初の追加runはreceiver schema登録漏れでPendingとなり、記録を保持したまま通常終了後に所有配備を復元しました。専用validatorと拒否試験を追加した修正runはStopCompleted、保持handle復旧、hook復元・drain・pin照合、通常終了後の所有配備復元まで成立しました。
+
+通常UI、coverage、camera選択、cloth、postprocessor未登録時の経路は保持します。投影生成元、variant／sampler、自然TextureMapping、中央下地camera、音声epoch、最後のshader生成API identity、原作同一frameの全画面RGBは引き続き未確定です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## 書戻しUVの現在draw供給
 
 残っていた4参照のうち、書戻しUV scale/offsetを現在のdraw引数から供給する接続を追加しました。原作側では呼出し元の限定命令、同一buildの内部登録先と実コード先頭、標準Blitの命令記録を照合しています。内部関数の登録先照合は、その関数の呼出しを新たに観測した証拠や、最後のshader生成API identityの証明には拡張しません。

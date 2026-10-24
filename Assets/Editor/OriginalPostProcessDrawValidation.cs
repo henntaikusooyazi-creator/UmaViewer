@@ -38,6 +38,7 @@ public static class OriginalPostProcessDrawValidation
         var color = Target(16, 8); var frame = Frame(camera, color);
         var projection = Matrix4x4.Ortho(0, 1, 0, 1, -2, 20);
         var material = Own(new Material(Shader.Find("Hidden/OriginalRendering/PostProcessDrawValidation"))); var mesh = Quad();
+        material.SetVector("_DrawMaterialVector", Vector4.one);
         foreach (int width in new[] { 16, 8 })
         {
             int height = width / 2; var input = Own(new Texture2D(width, height, TextureFormat.RGBA32, false, true));
@@ -53,6 +54,7 @@ public static class OriginalPostProcessDrawValidation
                     ? OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, flip)
                     : OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, flip, scale, offset);
                 draw.ValidateCurrent(frame, input);
+                Check(!draw.MaterialVector.HasValue, "Legacy draw does not infer a material vector.");
                 Check(draw.UvScaleOffset == new Vector4(scale.x, scale.y, offset.x, offset.y), "Current command UV arguments and legacy identity.");
                 Check(draw.TexelSize == new Vector4(1f / width, (flip ? -1f : 1f) / height, width, height), "Current descriptor and explicit sign.");
                 Check(draw.GpuViewProjection == GL.GetGPUProjectionMatrix(projection, true), "Fullscreen projection is separate from camera projection.");
@@ -78,6 +80,7 @@ public static class OriginalPostProcessDrawValidation
                 Reject<InvalidOperationException>(() => draw.ValidateCurrent(frame, color), "Foreign texture rejected.");
             }
         }
+        MaterialCases(frame, color, projection, mesh);
         var snapshot = OriginalPostProcessDrawState.Capture(frame, color, Matrix4x4.identity, Matrix4x4.identity, projection, false);
         color.Release(); Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, color), "Released RT rejected."); color.Create();
         var bad = Matrix4x4.identity; bad[0] = float.NaN;
@@ -88,6 +91,55 @@ public static class OriginalPostProcessDrawValidation
         Reject<InvalidOperationException>(() => OriginalPostProcessDrawState.Capture(frame, null, Matrix4x4.identity, Matrix4x4.identity, projection, false), "Missing draw input rejected.");
         var resized = Target(6, 4); snapshot = OriginalPostProcessDrawState.Capture(frame, resized, Matrix4x4.identity, Matrix4x4.identity, projection, false);
         resized.Release(); resized.width = 8; resized.Create(); Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, resized), "Resized input rejected.");
+    }
+    static void MaterialCases(OriginalCameraFrame frame, RenderTexture color, Matrix4x4 projection, Mesh mesh)
+    {
+        var source = Own(new Material(Shader.Find("Hidden/OriginalRendering/PostProcessDrawValidation")));
+        var outputMaterial = Own(new Material(source));
+        var input = Own(new Texture2D(8, 4, TextureFormat.RGBA32, false, true));
+        var pixels = new Color32[32]; for (int i = 0; i < pixels.Length; i++) pixels[i] = new Color32(80, 120, 200, 128);
+        input.SetPixels32(pixels); input.Apply();
+        Func<OriginalPostProcessDrawState> capture = () => OriginalPostProcessDrawState.Capture(frame, input,
+            Matrix4x4.identity, Matrix4x4.identity, projection, false, Vector2.one, Vector2.zero, source, "_SourceVector");
+        var rawColor = source.GetVector("_SourceColor");
+        var colorState = OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity,
+            projection, false, Vector2.one, Vector2.zero, source, "_SourceColor");
+        Check(colorState.MaterialVector.Value.Equals(rawColor), "Color property preserves its raw material vector.");
+        var vectors = new[] { new Vector4(.25f, .5f, .75f, .5f), new Vector4(.5f, .25f, 1, .75f), Vector4.zero };
+        var expected = new[] { new Color32(20, 60, 150, 64), new Color32(40, 30, 200, 96), new Color32(0, 0, 0, 0) };
+        for (int sample = 0; sample < vectors.Length; sample++)
+        {
+            if (sample > 0) source.SetVector("_SourceVector", vectors[sample]);
+            var draw = capture(); draw.ValidateCurrent(frame, input);
+            Check(draw.MaterialVector.HasValue && draw.MaterialVector.Value.Equals(vectors[sample]), "Shader default or current explicit material value.");
+            using (var chain = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(outputMaterial, 0, 8, 4, mesh,
+                new OriginalPostProcessChain.Binding("_MainTex", -2, input))))
+            {
+                var target = chain.Process(frame.Source, color, (stage, m) => {
+                    draw.ValidateCurrent(frame, input); m.SetMatrix("_DrawModel", draw.ObjectToWorld); m.SetMatrix("_DrawVP", draw.GpuViewProjection);
+                    m.SetVector("_DrawTexelSize", draw.TexelSize); m.SetVector("_DrawUvScaleOffset", draw.UvScaleOffset);
+                    m.SetVector("_DrawMaterialVector", draw.MaterialVector.Value);
+                }, null);
+                var read = AsyncGPUReadback.Request(target, 0, TextureFormat.RGBA32); read.WaitForCompletion(); Check(!read.hasError, "Material vector GPU readback.");
+                var bytes = read.GetData<byte>(); var p = expected[sample];
+                for (int i = 0; i < 32; i++) { report.pixels++; if (bytes[i * 4] != p.r || bytes[i * 4 + 1] != p.g || bytes[i * 4 + 2] != p.b || bytes[i * 4 + 3] != p.a) throw new Exception("Material vector GPU RGBA mismatch."); report.rgbaExact++; }
+            }
+        }
+        source.SetVector("_SourceVector", Vector4.one); var snapshot = capture();
+        source.SetVector("_SourceVector", new Vector4(1 + 1f / 1048576, 1, 1, 1));
+        Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Small material mutation rejects stale snapshot.");
+        Reject<InvalidOperationException>(() => OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, false, Vector2.one, Vector2.zero, null, "_SourceVector"), "Missing material rejected.");
+        foreach (string property in new[] { null, "", "_Missing", "_MainTex", "_Scalar" })
+            Reject<InvalidOperationException>(() => OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, false, Vector2.one, Vector2.zero, source, property), "Missing or non-vector property rejected.");
+        for (int lane = 0; lane < 4; lane++) foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity }) {
+            var value = Vector4.one; value[lane] = invalid; source.SetVector("_SourceVector", value);
+            Reject<ArgumentException>(() => capture(), "Non-finite material lane rejected.");
+        }
+        source.SetVector("_SourceVector", Vector4.one); snapshot = capture();
+        source.shader = Shader.Find("Hidden/InternalErrorShader");
+        Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Changed shader rejected.");
+        Object.DestroyImmediate(source);
+        Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Destroyed material rejected.");
     }
     public static void Run()
     {
