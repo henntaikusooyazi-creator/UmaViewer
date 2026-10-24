@@ -1,5 +1,21 @@
 # 実Controlによる独立結合検証
 
+## Fullscreen draw状態の生成
+
+`OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped)` は、同期frame callback内で使用します。fullscreen用の明示model／view／projectionから `ObjectToWorld` と現在backendの `GpuViewProjection` を生成し、そのdrawが読むtextureの現在寸法から `TexelSize` を生成します。Y符号は呼出し側が明示します。`frame.Projection` はcamera映像の生成に使った行列であり、fullscreen用として自動採用しません。
+
+利用側はchainの `prepare` 内で現在の先行段textureを選び、Captureと `ValidateCurrent(frame, input)` の後に、確認したshader layoutへ値を設定してください。色・depth・Film等のproducer値とは独立したdraw情報です。model、view、projection、入力texture、Y符号に省略時の推測値はありません。古いrender／selected serial、別camera、別color／depth参照、別texture、解放・サイズ変更を検出した入力、非有限行列は拒否します。serialによってRT内容の不変性や寿命が延びるわけではありません。
+
+汎用APIに原作の定数buffer layout・投影範囲・mesh・MipBias・UV scroll・Dimmer・書戻し変換・variantは埋め込みません。これらの意味と供給元は利用側の責任です。特定の保存CBに数値一致することから、その値を作った原作API／writerの一意性や未観測状態まで確定しません。
+
+`Invoke-IntegrationValidation.ps1 -PostProcessDrawOnly` は人工transformと非対称textureによるBuilt-in／URP14試験です。異なる入力寸法、明示Y反転、全RGBA、stale／foreign／released入力を確認し、**78/78 PASS、640画素一致**でした。観測profile指定や別の専用modeとの混在はEditor起動前に拒否します。既存Control結合376/376も公開ソースだけで再検証しています。
+
+私有の候補7段接続では、opaqueな保存CBの読込みを外して、必要な値だけを生成・明示設定する方式へ切り替えました。対象programの静的参照全てに供給元を割り当て、参照されない保存CBの値はGPUへ渡しません。保存入力のdraw情報240成分のbit一致、CPU producer49成分の一致、7 drawの896画素、連続した各中間段896画素と最終128画素のRGBA一致を確認しました。比較領域の範囲外sample／無効入力伝播は0です。Built-in D3D11の同じ保存観測に対する再評価であり、新規の原作run／独立観測ではありません。
+
+同じ経路で142秒の自然再生が終了・Viewer復帰し、7980/7980描画、左右同時59/59、116入力・812段のdraw状態再生成、8回・2727936画素の内部RGBA replay一致を確認しました。候補Film mode／color条件を満たさない2入力は処理成立に含めません。内部replay一致は原作同一frameとのRGB比較ではありません。投影範囲・Y規約・mesh・効果global・variant／samplerには明示候補contextの依存が残り、全自然生成を認定しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## 描画ごとの準備と中間出力通知
 
 `OriginalPostProcessChain.Binding(property, Func<Texture>)` は、外部textureを各drawで1回解決します。登録時にdepthがまだ存在しなくても、frame callback内で現在のdepthを返せます。null・解放済みRT・現在の出力へのaliasは描画前に拒否し、前回値へfallbackしません。従来の固定textureと前段参照も使えます。

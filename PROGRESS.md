@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## Fullscreen draw状態の再生成
+
+`OriginalPostProcessDrawState` を追加しました。現在のcamera入力・render serial・selected serialへ結んだ状態から、明示したfullscreen用model／view／projectionと現在のtexture寸法を使い、GPU view-projectionと符号付きtexel情報を生成します。映像を生成したcameraの投影をfullscreen描画へ流用しません。既存renderer・chainの既定動作は保持し、明示した利用側だけが採用します。
+
+私有の候補7段経路では保存CBの一括読込みを外しました。選択programの静的参照を全て分類し、必要なproducer値・draw状態・明示した未解決globalだけを設定します。保存入力で再生成したdraw情報の **240/240 float32成分がbit一致**し、既存CPU producerの49成分も一致しました。参照されない保存CBを捨てたGPU比較で、独立7 drawの **896/896画素**、連続した各中間段の896画素、最後の **128/128画素がRGBA一致**しています。同じ原作保存観測の再評価であり、独立した原作観測数へ合算しません。追加の原作runは行っていません。
+
+この経路で「うまぴょい伝説」**142秒**を自然終端・Viewer復帰まで再検証しました。**7980/7980更新**を描画し、左右同時有効 **59/59更新**、fault／exception 0、初回late-only 1回の保留を確認しました。対象118 camera入力のうち116入力・812段でdraw状態を生成し、8回の内部GPU replayは **2727936/2727936画素の全RGBA一致**です。残る2入力は候補のFilm mode／color条件の対象外として別記録にしています。前節までと件数が同じでも別のrunであり、過去の記録を書き換えません。
+
+公開人工試験はBuilt-in／URP14で **78/78 PASS、640画素RGBA一致**。入力サイズ・上下反転、古いserial、別camera／texture、解放・サイズ変更・非有限行列の拒否を確認しました。公開ソースだけの既存Control結合も **376/376 PASS**、wrapperの混在入力拒否は2/2です。
+
+Fullscreen投影範囲・Y規約・meshは明示した候補contextです。原作のconstructor／writer全体を証明したものではありません。MipBias、UV scroll、Dimmer、書戻しUV・tint、variant／samplerも確認済み保存contextへの依存が残ります。原作の全自然global生成、自然TextureMapping、同一原作frameのRGB一致は未証明です。[APIと残る依存](Tools/OriginalLiveRendering/INTEGRATION.md#fullscreen-draw状態の生成) を参照してください。採取値・program・私有接続器・画像は公開しません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## PostFilmの自然供給と候補7段への接続
 
 `OriginalPostFilmMath`、`OriginalLivePostFilmProvider` とbridgeの明示opt-inを追加しました。実worksheetの通常camera用3層とmulti-camera用3層から、Controlが選択したkeyと実際に使った補間率を渡します。multi-camera番号は既存のposition trackへ一意に結合し、そのViewer cameraを使います。番号を配列indexへ読み替えたり、通常cameraのFilmで補いません。
