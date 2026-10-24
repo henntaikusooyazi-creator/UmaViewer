@@ -393,6 +393,8 @@ namespace Gallop.Live.Cutt
             AlterUpdate_MirrorReflection(camSheet, _currentFrame);
             AlterUpdate_HdrBloom(camSheet, Mathf.RoundToInt(_currentFrame));
             AlterUpdate_PostEffect_BloomDiffusion(camSheet, Mathf.RoundToInt(_currentFrame));
+            if (OriginalCompositeBridge?.FilmProfile != null)
+                AlterUpdate_OriginalPostFilm(camSheet, Mathf.RoundToInt(_currentFrame));
 
             AlterUpdate_BgColor1(camSheet, _currentFrame);
             AlterUpdate_BgColor1(camSheet, _currentFrame);
@@ -2831,6 +2833,45 @@ namespace Gallop.Live.Cutt
 
                 OnUpdateHdrBloom(ref updateInfo);
             }
+        }
+
+        // Explicit observer path only; legacy rendering and event order stay intact.
+        private void AlterUpdate_OriginalPostFilm(LiveTimelineWorkSheet sheet, int frame)
+        {
+            var main = GetCamera(sheet.targetCameraIndex);
+            CapturePostFilm(sheet.postFilmKeys, frame, 1, main?.camera, null);
+            CapturePostFilm(sheet.postFilm2Keys, frame, 2, main?.camera, null);
+            CapturePostFilm(sheet.postFilm3Keys, frame, 3, main?.camera, null);
+            if (!_isMultiCameraEnable || _multiCameraCache == null || sheet.multiCameraPosKeys == null) return;
+            CaptureMultiPostFilm(sheet, sheet.postFilm1MultiCameraKeys, frame, 1);
+            CaptureMultiPostFilm(sheet, sheet.postFilm2MultiCameraKeys, frame, 2);
+            CaptureMultiPostFilm(sheet, sheet.postFilm3MultiCameraKeys, frame, 3);
+        }
+        private void CaptureMultiPostFilm(LiveTimelineWorkSheet sheet, List<LiveTimelineMultiCameraPostFilmData> groups, int frame, int layer)
+        {
+            if (groups == null) return;
+            foreach (var group in groups)
+            {
+                if (group == null) continue;
+                // Join the authored number to the existing position track. Never
+                // treat the number itself as an array index or substitute main.
+                int index = -1, matches = 0;
+                for (int i = 0; i < sheet.multiCameraPosKeys.Count; i++)
+                    if (sheet.multiCameraPosKeys[i] != null && sheet.multiCameraPosKeys[i].MultiCameraNo == group.MultiCameraNo)
+                    { index = i; matches++; }
+                if (matches == 1 && index < _multiCameraCache.Length)
+                    CapturePostFilm(group.keys, frame, layer, _multiCameraCache[index]?.camera, group.MultiCameraNo);
+            }
+        }
+        private void CapturePostFilm(LiveTimelineKeyPostFilmDataList keys, int frame, int layer, Camera camera, int? number)
+        {
+            if (keys == null || !camera || keys.HasAttribute(LiveTimelineKeyDataListAttr.Disable) || !keys.EnablePlayModeTimeline(_playMode)) return;
+            FindTimelineKey(out var currentBase, out var nextBase, keys, frame);
+            var current = currentBase as LiveTimelineKeyPostFilmData;
+            var next = nextBase as LiveTimelineKeyPostFilmData;
+            if (current == null) return;
+            float? ratio = next != null && next.IsInterpolateKey() ? CalculateInterpolationValue(current, next, frame) : (float?)null;
+            OriginalCompositeBridge.CaptureSelectedPostFilm(camera, layer, number, current, next, ratio, frame);
         }
 
         private void SetupBloomDiffusionUpdateInfo(ref PostEffectUpdateInfo_BloomDiffusion updateInfo,LiveTimelineKeyPostEffectBloomDiffusionData currentKey, LiveTimelineKeyPostEffectBloomDiffusionData nextKey, int currentFrame)

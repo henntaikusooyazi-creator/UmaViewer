@@ -4,11 +4,27 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
-## 原作CPUパラメータ生成とGPU定数の対応
+## PostFilmの自然供給と候補7段への接続
+
+`OriginalPostFilmMath`、`OriginalLivePostFilmProvider` とbridgeの明示opt-inを追加しました。実worksheetの通常camera用3層とmulti-camera用3層から、Controlが選択したkeyと実際に使った補間率を渡します。multi-camera番号は既存のposition trackへ一意に結合し、そのViewer cameraを使います。番号を配列indexへ読み替えたり、通常cameraのFilmで補いません。
+
+scalar・色・roll・scaleを評価し、同じselected serial・camera・layerのFilmだけを既存CPU→GPU経路へ供給します。未通知、重複、別camera、古い更新は供給成功にせず、Movie／BlinkLight同期は未接続のままです。profile未登録時は従来経路を保持します。
+
+原作の自然keyと評価直後payloadを同じ呼出しで採取し、判定できた **13/13件**で、**float32 390成分のbitと型付き値104成分が一致**しました。これらは補間しないselected keyの観測で、残る3件はcurve入力不足として直接照合から除外しています。自然curve遷移を原作と照合した結果ではありません。公開人工試験はBuilt-in／URP14で **33/33 PASS**、既存Control **376/376**、既存producer **44/44** も個別に再検証しました。
+
+最終runtimeで「うまぴょい伝説」**142秒**が自然終端・Viewer復帰まで成立し、**7980/7980更新**を描画、左右同時有効 **59/59更新**を確認しました。Film観測は24061件、初回late-only 1回は別に保留しています。対象118 camera入力のうち **116入力・812段**へ自然color／depth／Bloom・Diffusion／Filmを供給しました。残る2入力は成立件数に含めません。
+
+私有GPU検証では保存済み候補variantとfullscreen用global templateを明示し、人工7段式を使わず実programの経路を実行しました。8回の段別GPU replayで **2727936/2727936画素の全RGBAが一致**し、8回とも処理前後のRGBが変化しました。自然入力profileには保存RGB画像やFilm keyを含めていません。ただし、固定のglobal templateと限定variantを使用するため、原作の全自然global／variant生成や同一原作frameのRGB一致は未証明です。最後のshader identityもUnknownのままです。
+
+今回の原作runは2件がStopCompleted・所有配備復元まで成立しました。先行のmetadata上限停止runはPendingを保持し、通常終了後の配備復元だけを別記録へ残しています。私有検証器の初回失敗も成功runと分けて保存しました。採取値・nativeコード・program・画像・receiptは公開対象外です。[接続APIと検証の境界](Tools/OriginalLiveRendering/INTEGRATION.md#postfilmの自然key供給) を参照してください。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
+## 先行成果：原作CPUパラメータ生成とGPU定数の対応
 
 限定runで実methodと描画用値型のmetadataを取得し、Bloom／Diffusionのvector生成と、movieを使わないPostFilmの定数設定を確認しました。classの保存値と描画用値型のlayoutは区別しています。対象mask描画で直近の限定記録を固定し、同一更新・receiver cameraが一致するCPU入力を一意に選びました。別cameraや先行更新の値を代用していません。
 
-公開実装は `OriginalPostProcessProducerMath` と明示opt-inの `OriginalLivePostProcessParameters` です。確認済み依存を外部profileから受け取り、既存のcurrent color／depth・typed payload経路へ接続します。Filmは同じselected serial・cameraに属する明示状態だけを受け入れ、未供給時はUnknownのままです。通常ライブの自動置換やPostFilm keyの新しい補間実装は行いません。
+公開実装は `OriginalPostProcessProducerMath` と明示opt-inの `OriginalLivePostProcessParameters` です。確認済み依存を外部profileから受け取り、既存のcurrent color／depth・typed payload経路へ接続します。Filmは同じselected serial・cameraに属する明示状態だけを受け入れ、未供給時はUnknownのままです。このCPU算術追加の時点ではPostFilm key評価は未接続でした。現在の自然供給は上節を参照してください。
 
 公開の人工入力試験はBuilt-in／URP14で **44/44 PASS、4096画素のRGB差0**。既存Control結合も現在のソースで **376/376 PASS**。同じ原作更新から選んだCPU入力を公開算術へ渡す私有試験では、対象7段へ供給する **49/49 float32成分がGPU定数とbit一致**し、その値を再生成した7 drawの **896/896画素がRGBA一致**しました。連続生成の中間896画素・最終128画素も同じ保存参照に一致し、独立した原作観測数へ合算しません。私有RGB試験はBuilt-in D3D11です。
 

@@ -69,5 +69,23 @@ namespace Gallop.Live.Cutt
         public float movieSpeed; // 0xC8
         public LiveTimelineKeyPostFilmData.ColorBlend colorBlend; // 0xCC
         public float colorBlendFactor; // 0xD0
+
+        public string BlinkLightName;
+        public int BlinkLightNameHash, BlinkLightContainerIndex;
+        public float BlinkLightBrightnessPower;
+        public bool IsAdjustedBlinkLightColor;
+    }
+
+    [System.Serializable]
+    public class LiveTimelineKeyPostFilmDataList : LiveTimelineKeyDataListTemplate<LiveTimelineKeyPostFilmData> { }
+
+    [System.Serializable]
+    public class LiveTimelineKeyMultiCameraPostFilmDataList : LiveTimelineKeyPostFilmDataList { }
+
+    [System.Serializable]
+    public class LiveTimelineMultiCameraPostFilmData : ILiveTimelineGroupDataWithName
+    {
+        public int MultiCameraNo;
+        public LiveTimelineKeyMultiCameraPostFilmDataList keys;
     }
 }

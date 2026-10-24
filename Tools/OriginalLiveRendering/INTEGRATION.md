@@ -8,7 +8,7 @@
 
 公開試験は7段を2更新描き、現在のdepth・typed payload・段順序・各段のUNorm量子化後のRGBを独立したCPU式で確認します。欠落depth、自己alias、prepare／completedの例外、再入とdispose、状態復元も検証します。追加経路を含む自然入力試験は **105/105 PASS、4352画素**、後処理試験は **46/46 PASS**、Control結合は **376/376 PASS**。いずれもBuilt-in／URP14を含みます。
 
-私有の保存原作入力でも全段をprepareで設定し、現在depthを明示resolverへ渡しました。独立drawの896画素、連続生成した各中間段の896画素、最終128画素がRGBA一致しました。後二者は同じ保存参照を再評価した結果で、新しい原作観測ではありません。選択variantのmetadataから追加のparameterとtexture参照を確認しましたが、metadata上の対応をtimelineからCBを生成する演算の証明へ昇格していません。特にPostFilm関連の自然更新が現在のpayloadにありません。
+私有の保存原作入力でも全段をprepareで設定し、現在depthを明示resolverへ渡しました。独立drawの896画素、連続生成した各中間段の896画素、最終128画素がRGBA一致しました。後二者は同じ保存参照を再評価した結果で、新しい原作観測ではありません。この段階ではPostFilm関連の自然更新は未供給でした。その後の自然key接続は末尾の「PostFilmの自然key供給」を参照してください。
 
 自然probeは人工式を7段へ適用します。各段は `color.rgb * 0.5 + (depth * 0.2, intensity / 7 * 0.1, 0.03)` で、その直後にUNormへ書きます。CPU比較は入力から各段の量子化を順に評価します。原作programの自然供給ではありません。最大32 camera入力をsampleし、各入力の元color・depthと7段の出力をreadbackする上限です。結果のmode、段数、全段の完了数、段別比較数もwrapperで検査します。
 
@@ -247,7 +247,38 @@ renderer.SetInputFramePostProcessor(parameters, depthCopyShader);
 
 私有の原作比較では、対象drawの同一更新に属するreceiver cameraとCPU入力を照合し、7段へ供給する49 float32成分をGPU定数へbit比較しました。同じ成分の複数drawへの再供給を含む件数です。公開算術でこれらを再生成して既存chainへ渡し、独立7 drawの896画素、連続7段の中間896画素、最終128画素でRGBA一致しました。連続比較は同じ保存参照の再評価です。行列・global値・画像・depth・頂点等の残りの保存入力は保持しており、全定数を自然生成した結果ではありません。最終shaderの生成identityや全画面・全frame一致も認定しません。CPU command bufferから描画queueへの完全なwriter閉包を証明するものでもありません。原作値・native layout・program・採取器・receiptはrepo外だけに保存しています。
 
-今回の変更後に142秒の自然楽曲は再実行していません。PostFilmの連続timeline providerは未接続で、自然7段RGBの完成とは区別します。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+CPU算術追加の時点では142秒の自然楽曲を再実行しておらず、PostFilmの連続timeline providerも未接続でした。次節はその後の追加成果です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
+## PostFilmの自然key供給
+
+`bridge.UseConfirmedPostFilm(confirmedFilmProfile)` が、既存Controlの選択・補間helperを使う追加経路を有効にします。profileには確認済みの時間・角度演算の依存値、roll／scaleの保持成分、depthの明示状態を渡します。原作値の既定profileは公開repoへ埋め込みません。MovieとBlinkLight同期には別のproviderが必要です。
+
+`Frame.Films` は通常camera／multi-camera、3層、key選択、実際に使った補間率、評価済みpayloadを更新ごとに保持します。multi-camera用keyの番号は、同じ番号のposition trackを一意に探して既存Viewer cameraへ結びます。main cameraへのfallbackはありません。新しいBeginFrameで前回のFilmを破棄します。未接続分岐は値を持たない観測として残し、未通知や曖昧な結合から既定値を作りません。
+
+```csharp
+provider.Bridge.UseConfirmedPostFilm(confirmedFilmProfile);
+var film = new OriginalLivePostFilmProvider(
+    () => preview.RenderingFrame, confirmedFilmProfile, 1);
+var parameters = new OriginalLivePostProcessParameters(
+    () => preview.RenderingFrame, confirmedPostProcessProfile,
+    (frame, values) => ProcessQualifiedPrograms(frame, values),
+    film.Resolve);
+preview.SetInputFramePostProcessor(parameters, confirmedDepthCopyShader);
+```
+
+上のprogram、binding、profileは呼出し側が明示します。providerは同じserial・camera・layerの一意なFilmだけを変換し、欠落はnull、未接続分岐は拒否します。Filmを必要とするprogramがnullを受け入れるかは、既存のcallback契約と同様に呼出し側が判断します。従来の明示Film providerと未登録時の描画は保持します。
+
+`Invoke-IntegrationValidation.ps1 -PostFilmOnly` は、人工keyの4色配置、scalarのfloat32演算、保持値、未接続分岐、実Controlの選択と補間、camera／layer／serialの境界とBuilt-in／URP14のGPU接続を検証します。**33/33 PASS**。既存Control **376/376** と既存producer **44/44** も個別に通過しました。専用modeや実測入力引数との併用は起動前に拒否します。
+
+原作の限定観測では同一呼出しのkeyと評価直後payloadを保存し、補間しない13件でfloat32 390成分がbit一致、その他104成分も一致しました。curve入力が不足する3件はこの直接比較に含めていません。補間分岐の静的命令確認と人工検証を、自然curve遷移の実測へ拡張しません。
+
+最終runtimeの自然再生は142秒を完走し、7980更新を描画、左右同時有効59/59更新、Film観測24061件を確認しました。118 camera入力のうち116入力で私有の候補7段を実行し、812段が完了しています。8入力の各段を同じ現在入力から別GPU描画で再合成し、2727936画素の全RGBAが一致しました。8入力とも処理前後のRGB変化を確認しました。2入力は候補経路の成立件数へ含めません。
+
+この私有試験の自然入力は現在のViewer color／raw depth／typed payload／Filmです。保存RGBや保存Film keyは供給しません。ただしprogramとfullscreen用global templateは保存済み候補を明示し、特定のmode・色配置・入力条件に限定しています。その他のglobal生成、variant選択、Movie／BlinkLight、自然TextureMapping、原作時刻原点、同一原作frameのRGB、最後のshader生成API identityは未確定です。原作に対する画素一致試験とは区別します。
+
+私有probeの初回は未使用texture slotの取得で停止しました。明示graphから同じ更新のRTを選ぶよう修正し、短い2更新・14段・2368画素のGPU preflightを通してから142秒を再実行しました。公開rendererを変更した回避ではありません。失敗記録は成功runとは別に保持しています。
+
+原作runは2件でStopCompletedと配備復元を確認し、先行のmetadata上限停止runはPendingと通常終了後の配備復元を別々に保持します。公開物に採取値、native source、shader program、画像、receiptを含めません。各Unknown flagと過去Pendingは変更しません。
 
 ## 基盤修正
 

@@ -9,6 +9,20 @@ namespace Gallop.Live.Rendering
 {
     public sealed class OriginalLiveTimelineBridge
     {
+        public readonly struct FilmSelection
+        {
+            public readonly long Serial;
+            public readonly Camera Camera;
+            public readonly int Layer, CurrentKeyFrame;
+            public readonly int? MultiCameraNo, NextKeyFrame;
+            public readonly float? UsedRatio;
+            public readonly PostFilmUpdateInfo? Value;
+            public readonly string UnavailableReason;
+            internal FilmSelection(long serial, Camera camera, int layer, int? cameraNo,
+                int currentKey, int? nextKey, float? ratio, PostFilmUpdateInfo? value, string reason)
+            { Serial = serial; Camera = camera; Layer = layer; MultiCameraNo = cameraNo;
+              CurrentKeyFrame = currentKey; NextKeyFrame = nextKey; UsedRatio = ratio; Value = value; UnavailableReason = reason; }
+        }
         public readonly struct Selection
         {
             public readonly long Serial;
@@ -34,8 +48,15 @@ namespace Gallop.Live.Rendering
             public readonly float ViewerFrame;
             public readonly ReadOnlyCollection<Selection> Selections;
             public readonly PostEffectUpdateInfo_BloomDiffusion? PostEffect;
-            internal Frame(long serial, float frame, Selection[] selections, PostEffectUpdateInfo_BloomDiffusion? postEffect)
-            { Serial = serial; ViewerFrame = frame; Selections = Array.AsReadOnly(selections); PostEffect = postEffect; }
+            public readonly ReadOnlyCollection<FilmSelection> Films;
+            internal Frame(long serial, float frame, Selection[] selections, PostEffectUpdateInfo_BloomDiffusion? postEffect, FilmSelection[] films)
+            { Serial = serial; ViewerFrame = frame; Selections = Array.AsReadOnly(selections); PostEffect = postEffect; Films = Array.AsReadOnly(films); }
+            public bool TryGetFilm(Camera camera, int layer, out FilmSelection selection)
+            {
+                selection = default; int count = 0;
+                foreach (var film in Films) if (film.Camera == camera && film.Layer == layer) { selection = film; count++; }
+                return count == 1;
+            }
             public bool TryGetTrack(int ordinal, out Selection selection)
             {
                 selection = default; int count = 0;
@@ -47,6 +68,11 @@ namespace Gallop.Live.Rendering
         readonly ConditionalWeakTable<object, Token> tokens = new ConditionalWeakTable<object, Token>();
         readonly Dictionary<int, int> compositeIndices = new Dictionary<int, int>();
         readonly List<Selection> pending = new List<Selection>();
+        readonly List<FilmSelection> films = new List<FilmSelection>();
+        public OriginalPostFilmMath.ConfirmedProfile FilmProfile { get; private set; }
+        public void UseConfirmedPostFilm(OriginalPostFilmMath.ConfirmedProfile profile)
+        { FilmProfile = profile ?? throw new ArgumentNullException(nameof(profile)); }
+        public void ClearConfirmedPostFilm() { FilmProfile = null; films.Clear(); }
         long serial, nextToken;
         float viewerFrame;
         bool collecting;
@@ -73,7 +99,19 @@ namespace Gallop.Live.Rendering
         }
         long TokenFor(object key) => tokens.GetValue(key, _ => new Token { Id = ++nextToken }).Id;
         public void BeginFrame(float frame)
-        { pending.Clear(); postEffect = null; viewerFrame = frame; serial++; collecting = true; }
+        { pending.Clear(); films.Clear(); postEffect = null; viewerFrame = frame; serial++; collecting = true; }
+
+        public void CaptureSelectedPostFilm(Camera camera, int layer, int? multiCameraNo,
+            LiveTimelineKeyPostFilmData current, LiveTimelineKeyPostFilmData next, float? usedRatio, int currentFrame)
+        {
+            if (!collecting || FilmProfile == null || current == null || !camera) return;
+            if (layer < 1 || layer > 3) throw new ArgumentOutOfRangeException(nameof(layer));
+            PostFilmUpdateInfo? value = null; string reason = null;
+            try { value = OriginalPostFilmMath.Evaluate(current, next, usedRatio, currentFrame, FilmProfile); }
+            catch (NotSupportedException e) { reason = e.Message; }
+            films.Add(new FilmSelection(serial, camera, layer, multiCameraNo, current.frame,
+                next != null ? next.frame : (int?)null, usedRatio, value, reason));
+        }
 
         // Preserve the value actually emitted by Control in this update. No key
         // search, parameter conversion, or previous-frame fallback occurs here.
@@ -110,7 +148,7 @@ namespace Gallop.Live.Rendering
         {
             if (!collecting) return;
             collecting = false;
-            var frame = new Frame(serial, viewerFrame, pending.ToArray(), postEffect); LastFrame = frame;
+            var frame = new Frame(serial, viewerFrame, pending.ToArray(), postEffect, films.ToArray()); LastFrame = frame;
             // A comparison pair belongs to one owner update. A second late update
             // without AlterUpdate must not reuse it as a new observation.
             ownerClock = null;
