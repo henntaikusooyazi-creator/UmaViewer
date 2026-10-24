@@ -81,6 +81,7 @@ public static class OriginalPostProcessDrawValidation
             }
         }
         MaterialCases(frame, color, projection, mesh);
+        PropertyCases(frame, color, projection, mesh);
         var snapshot = OriginalPostProcessDrawState.Capture(frame, color, Matrix4x4.identity, Matrix4x4.identity, projection, false);
         color.Release(); Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, color), "Released RT rejected."); color.Create();
         var bad = Matrix4x4.identity; bad[0] = float.NaN;
@@ -140,6 +141,82 @@ public static class OriginalPostProcessDrawValidation
         Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Changed shader rejected.");
         Object.DestroyImmediate(source);
         Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Destroyed material rejected.");
+    }
+    static void PropertyCases(OriginalCameraFrame frame, RenderTexture color, Matrix4x4 projection, Mesh mesh)
+    {
+        const string global = "_ArtificialOriginalPostProcessGlobalVector";
+        var previous = Shader.GetGlobalVector(global);
+        var source = Own(new Material(Shader.Find("Hidden/OriginalRendering/PostProcessDrawValidation")));
+        var targetMaterial = Own(new Material(source));
+        var input = Own(new Texture2D(8, 4, TextureFormat.RGBA32, false, true));
+        var pixels = new Color32[32];
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 8; x++) pixels[y * 8 + x] = new Color32((byte)(x * 20), (byte)(y * 40), 80, 128);
+        input.SetPixels32(pixels); input.Apply();
+        try
+        {
+            Shader.SetGlobalVector(global, Vector4.zero);
+            var colorState = OriginalPostProcessPropertyState.Capture(frame, input, source, "_SourceColor", global);
+            Check(colorState.MaterialVector.Equals(source.GetVector("_SourceColor")), "Paired color source retains raw shader default.");
+            for (int sample = 0; sample < 2; sample++)
+            {
+                var currentFrame = Frame(frame.Source, color, sample + 1, sample + 1);
+                source.SetVector("_SourceVector", new Vector4(sample == 0 ? 1 : .5f, 1, 1, 1));
+                Shader.SetGlobalVector(global, new Vector4(sample * .25f, 0, 0, 0));
+                var state = OriginalPostProcessPropertyState.Capture(currentFrame, input, source, "_SourceVector", global);
+                state.ValidateCurrent(currentFrame, input);
+                Check(state.MaterialVector.Equals(source.GetVector("_SourceVector")) && state.GlobalVector.Equals(Shader.GetGlobalVector(global)), "Current independent material/global values.");
+                var draw = OriginalPostProcessDrawState.Capture(currentFrame, input, Matrix4x4.identity, Matrix4x4.identity, projection, false,
+                    Vector2.one, new Vector2(state.GlobalVector.x, state.GlobalVector.y));
+                using (var chain = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(targetMaterial, 0, 8, 4, mesh,
+                    new OriginalPostProcessChain.Binding("_MainTex", -2, input))))
+                {
+                    var target = chain.Process(frame.Source, color, (stage, m) => {
+                        state.ValidateCurrent(currentFrame, input); draw.ValidateCurrent(currentFrame, input);
+                        m.SetMatrix("_DrawModel", draw.ObjectToWorld); m.SetMatrix("_DrawVP", draw.GpuViewProjection);
+                        m.SetVector("_DrawTexelSize", draw.TexelSize); m.SetVector("_DrawUvScaleOffset", draw.UvScaleOffset);
+                        m.SetVector("_DrawMaterialVector", state.MaterialVector);
+                    }, null);
+                    var read = AsyncGPUReadback.Request(target, 0, TextureFormat.RGBA32); read.WaitForCompletion(); Check(!read.hasError, "Current material/global GPU readback.");
+                    var data = read.GetData<byte>();
+                    for (int y = 0; y < 4; y++) for (int x = 0; x < 8; x++)
+                    {
+                        var expected = pixels[y * 8 + Mathf.Min(7, x + sample * 2)]; int at = (y * 8 + x) * 4;
+                        report.pixels++;
+                        if (data[at] != (sample == 0 ? expected.r : expected.r / 2) || data[at + 1] != expected.g || data[at + 2] != expected.b || data[at + 3] != expected.a)
+                            throw new Exception("Current material/global GPU RGBA mismatch.");
+                        report.rgbaExact++;
+                    }
+                }
+                Reject<InvalidOperationException>(() => state.ValidateCurrent(Frame(frame.Source, color, sample + 2, sample + 1), input), "Property snapshot rejects changed render.");
+                Reject<InvalidOperationException>(() => state.ValidateCurrent(Frame(frame.Source, color, sample + 1, sample + 2), input), "Property snapshot rejects changed selection.");
+                Reject<InvalidOperationException>(() => state.ValidateCurrent(currentFrame, color), "Property snapshot rejects foreign input.");
+                Shader.SetGlobalVector(global, state.GlobalVector + new Vector4(1f / 1048576, 0, 0, 0));
+                Reject<InvalidOperationException>(() => state.ValidateCurrent(currentFrame, input), "Small global mutation invalidates snapshot.");
+                Shader.SetGlobalVector(global, state.GlobalVector);
+                source.SetVector("_SourceVector", state.MaterialVector + new Vector4(1f / 1048576, 0, 0, 0));
+                Reject<InvalidOperationException>(() => state.ValidateCurrent(currentFrame, input), "Small material mutation invalidates paired snapshot.");
+            }
+            source.SetVector("_SourceVector", Vector4.one);
+            foreach (string property in new[] { null, "", "_Missing", "_MainTex", "_Scalar" })
+                Reject<InvalidOperationException>(() => OriginalPostProcessPropertyState.Capture(frame, input, source, property, global), "Missing or non-vector paired source rejected.");
+            foreach (string property in new[] { null, "", "_SourceVector", "_SourceColor" })
+                Reject<InvalidOperationException>(() => OriginalPostProcessPropertyState.Capture(frame, input, source, "_SourceVector", property), "Missing global or declared material override rejected.");
+            for (int lane = 0; lane < 4; lane++) foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+            {
+                var value = Vector4.one; value[lane] = invalid; Shader.SetGlobalVector(global, value);
+                Reject<ArgumentException>(() => OriginalPostProcessPropertyState.Capture(frame, input, source, "_SourceVector", global), "Non-finite global lane rejected.");
+                Shader.SetGlobalVector(global, Vector4.zero); source.SetVector("_SourceVector", value);
+                Reject<ArgumentException>(() => OriginalPostProcessPropertyState.Capture(frame, input, source, "_SourceVector", global), "Non-finite paired material lane rejected.");
+                source.SetVector("_SourceVector", Vector4.one);
+            }
+            var snapshot = OriginalPostProcessPropertyState.Capture(frame, input, source, "_SourceVector", global);
+            source.shader = Shader.Find("Hidden/InternalErrorShader");
+            Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Paired source shader replacement rejected.");
+            Object.DestroyImmediate(source);
+            Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, input), "Destroyed paired source rejected.");
+            Reject<InvalidOperationException>(() => OriginalPostProcessPropertyState.Capture(default, input, targetMaterial, "_SourceVector", global), "Missing paired frame rejected.");
+        }
+        finally { Shader.SetGlobalVector(global, previous); }
     }
     public static void Run()
     {

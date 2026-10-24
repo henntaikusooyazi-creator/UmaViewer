@@ -1,8 +1,22 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-24。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-25。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## UV scroll／Dimmerの現在property供給
+
+`OriginalPostProcessPropertyState` を追加しました。明示materialのColor／Vectorと、別に指定したglobalの現在値を同期取得し、camera、selected／render serial、入力textureへ結びます。非有限値、materialの解放・shader変更、微小なproperty変更、古い更新や別入力を拒否します。getterは状態を変更せず、通常UIや既存rendererへ自動登録しません。[供給条件](Tools/OriginalLiveRendering/INTEGRATION.md#現在materialとglobalの対取得) を参照してください。
+
+原作の限定観測では、UVの実writerのowner field、global setter、現在global、同じmixed drawのGPU消費を対応付けました。Dimmerも正式なproperty名からshader既定state・現在material state・同じdrawのGPU定数を結び、消費する計6成分がfloat32 bit一致しました。観測したUVはゼロ、Dimmerは既定色であり、非ゼロUVや可変Dimmerの自然遷移、ownerの型・全lifetimeを証明したものではありません。
+
+公開人工GPU試験はBuilt-in／URP14で **416/416 PASS、2240/2240画素RGBA一致**。異なる2更新のglobalによるUV移動とmaterial色変化を実GPUで確認しました。私有source退避後の公開Control結合も **376/376 PASS**。今回の原作保存入力では、property **6/6**、draw **248/248**、既存producer **49/49**成分がbit一致し、独立7 draw **896/896**、連続中間 **896/896**、最終 **128/128画素RGBA一致**、invalid sample 0でした。独立・連続比較は同じ原作観測の再評価です。
+
+最終ソースの自然再生は **142秒、7939/7939描画、左右同時58/58更新**で終端・Viewer復帰しました。116 camera入力のうち候補Film条件が成立した114入力で現在propertyを取得し、保存effect vector使用0、**798段**、内部replay **2727936/2727936画素RGBA一致**、fault／例外0でした。残る2入力は保留です。Dimmerはロード済みshader資産から作成したmaterialの現在値、UVはViewerの現在global getterから供給しています。getterだけではglobalの存在やViewer内writerを証明できず、この再生のUVはゼロでした。原作同一frameの自然RGB一致には拡張しません。
+
+対象programの87個の段別unique register参照は、既存producer／draw85と今回の現在property観測2に分類します。保存effect contextへの依存は除去しましたが、後者を上流producerや更新owner全体の資格化、全定数の自然生成率とは扱いません。追加5原作runはそれぞれStopCompleted・保持handle復旧・通常終了後の所有配備復元を確認しました。未使用のmanaged thunkで書込み0だった診断や、略称propertyで名寄せできなかった採取を、writer不存在・Dimmer成功へ読み替えません。容量超過案はrun開始前の拒否として分離しています。
+
+projection生成元、variant／sampler、自然TextureMapping、中央下地camera、音声epoch、最後のshader生成API identity、原作同一frameの全画面RGBは未確定です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
 
 ## 書戻しtintの現在material供給
 

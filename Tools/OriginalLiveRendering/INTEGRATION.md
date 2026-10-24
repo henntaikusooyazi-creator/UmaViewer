@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 現在materialとglobalの対取得
+
+`OriginalPostProcessPropertyState.Capture(frame, input, material, materialProperty, globalProperty)` は、明示materialのColor／Vectorと別のglobalを同期取得します。`MaterialVector` と `GlobalVector` はraw値で、色空間変換や時間からの推測を行いません。欠落material、宣言されていないmaterial property、型不一致、非有限値、material側に宣言されたpropertyをglobalとして指定する呼出しは拒否します。
+
+同期prepare内で `ValidateCurrent(frame, input)` を実行してください。camera、selected／render serial、frame color／depth参照、入力と寸法、material lifetime／shader、現在の両property値を再照合します。RT内容の凍結や外部変更のrollbackは行いません。materialは呼出し側が所有します。
+
+`Shader.GetGlobalVector` はglobalの存在、writer、更新ownerを証明しません。未設定時のUnity getter結果を採用できるか、当該drawがmaterial overrideやMaterialPropertyBlockよりglobalを消費するかは、呼出し側が別に資格化する必要があります。このAPIは未宣言のmaterial overrideを解決しません。保存値・ゼロ・白を未確認producerの代用にしないでください。
+
+`-PostProcessDrawOnly` の公開人工GPU試験はBuilt-in／URP14で **416/416 PASS、2240画素RGBA一致**。異なる2更新でglobalのUV移動とmaterial色変化を描画し、微小変更、更新不一致、別入力、materialのshader変更・解放、型不一致、非有限4成分を拒否しました。私有source退避後の公開Control結合も **376/376 PASS**。既存DrawState API・shader・未登録経路は変更していません。
+
+私有の限定原作観測では、実UV writerのowner fieldからglobal setter・現在global・同じmixed drawへ接続し、Dimmerも名前で特定した現在material／shader既定stateから同じGPU定数へ結びました。消費6成分、既存draw248成分、producer49成分がbit一致し、独立896・連続中間896・最終128画素RGBA一致を確認しました。全writer lifetime、非ゼロUVや可変Dimmer遷移、shader生成API identityの証明ではありません。
+
+私有候補7段では保存effect vectorをcontextから除去し、現在のViewer global getterと、ロード済みeffect shaderから生成したmaterialの現在propertyを毎入力で取得します。142秒自然再生は7939描画、左右同時58更新、対象114/116入力、798段、内部replay2727936画素RGBA一致、終端・Viewer復帰・fault／例外0でした。2入力は候補Film条件外で保留、観測UVはゼロ、Viewer内global writer／presenceは未確定です。87参照はproducer／draw85＋現在property観測2という供給源分類であり、原作と同じ自然producerが全て接続できたという判定ではありません。全false／Unknown gateと過去Pendingを維持します。
+
 ## 現在materialのvector取得
 
 `OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped, uvScale, uvOffset, vectorSource, vectorProperty)` は、指定materialに宣言されたColor／Vector propertyの現在値を `MaterialVector` に保持します。shader既定値も、現在のmaterialから取得します。property欠落、Float／Texture等の型、非有限値は拒否し、白色やglobal値で補完しません。従来overloadの `MaterialVector` はnullです。
