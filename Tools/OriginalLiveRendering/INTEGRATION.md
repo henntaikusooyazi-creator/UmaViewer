@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## typedライブデータの読取監査
+
+今後の調査は、選択楽曲の設定とtyped timeline、関連Prefab／Material／Shader、既存CPU／GPU観測の順に照合します。データにある演出指定、素材上の参照・pass・宣言keyword、実行時の選択・GPU消費は別の証拠です。データや名前の一致だけでruntime bindingを認定しません。追加の原作runは、データと既存コードで解決できなかった有限の観測対象に限定します。
+
+Editor専用の `OriginalLiveDataInventory.Capture(loadedData, includeKeyPayload: false, maxKeys: 100000)` は、既存loaderが返した `LiveTimelineData` を受け取ります。worksheetのserialized fieldを辿り、`ILiveTimelineKeyDataList` を元順序で列挙します。key index・frame・attribute・型、nullと空、worksheet対象cameraと有効flag、groupに明示されたmulti-camera番号を保持します。camera番号はauthored値であり、原作receiver／cameraへのruntime帰属を自動的に確定しません。raw fileの解析や新たなloader、key選択・補間・描画への登録は含みません。
+
+既定ではkey payloadを取りません。`includeKeyPayload: true` はtyped keyのserialized fieldをJSON文字列として保持するため、実データの出力はprivateな保存先へ限定してください。importされていないfieldや未知componentは復元せず、原作の全raw keyを取得できたとは扱いません。worksheet64、track4096、group4096、深さ16、key最大100000、payload一件65536文字・合計8Mi文字の上限を持ち、超過時は例外で停止します。
+
+人工の `OriginalLiveDataInventoryValidation.Run` は **22/22 PASS**。空・null・元順序、同じlistの異なる参照path、通常／multi-cameraの明示値、payload opt-in、読取前後のkey選択状態、key／worksheet／payload上限を確認しました。私有source退避後の公開Control結合も **376/376 PASS**。既存のUnity wrapperと同じ専用Editor環境で、`-executeMethod OriginalLiveDataInventoryValidation.Run -integrationOutput <外部出力先>` を指定できます。結果は `inventory-validation.json` です。
+
+今回のローカル監査はmusic1001の78 bundle、typed keyリスト225本・5232 key、Prefab 9件、Material 22件、object参照91件を取得しました。Bloom／Diffusion108 key、Film252 key、位置2groupとFilm2groupのmulti-camera番号を保持しています。実値・参照識別子・資産・採取scriptはrepoへ含めません。DB／対象bundleの前後hashは不変です。
+
+保存GPU観測との対応は、先行6 drawのshader名と関連2 shader資産、assetのpass一覧・宣言keyword、Dimmer既定値の限定一致までです。原作の同一drawで選択されたpass／variant・samplerや最後のshader生成API identityはUnknownです。3件のnull component slotは所在を保存しましたが、Missing MonoBehaviour判定は0件で、型や実行機能を推測しません。追加原作run・自然再生・RGB試験は今回実施せず、既存の成功記録と全false／Unknown gate・過去Pendingを保持します。
+
 ## 現在materialとglobalの対取得
 
 `OriginalPostProcessPropertyState.Capture(frame, input, material, materialProperty, globalProperty)` は、明示materialのColor／Vectorと別のglobalを同期取得します。`MaterialVector` と `GlobalVector` はraw値で、色空間変換や時間からの推測を行いません。欠落material、宣言されていないmaterial property、型不一致、非有限値、material側に宣言されたpropertyをglobalとして指定する呼出しは拒否します。

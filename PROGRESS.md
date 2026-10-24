@@ -4,6 +4,22 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## ライブデータを起点とした対応付け
+
+調査順序を **ライブ設定・typed timeline → Prefab／Material／Shader参照 → 保存済みCPU／GPU観測 → 残ったruntime依存だけ採取** へ変更しました。追加の原作runは行っていません。既存rendererや現在property取得APIの動作は保持します。
+
+music1001のローカル依存78 bundle、約23.8MBを既存のasset managerで選択ロードし、キャラクター・音声・ライブを実行せずに調べました。import済みworksheetのkeyリスト225本・5232 key、Prefab 9件、Material 22件、componentからのobject参照91件をローカル専用に保存し、DBと対象AssetBundleの監査前後のhash一致を確認しました。これはViewerのtyped schemaから読める範囲の一覧で、未定義のraw fieldを含む原作データ全体の完全性を証明しません。
+
+Bloom／Diffusionは108 key、Filmは通常3層と左右multi-cameraを合わせて252 keyでした。左右位置の各6 keyと、multi-camera番号を持つFilmの各3 keyを、同じデータの別リストとして保持しています。Filmのmovie参照はこの選択データでは0件でした。時刻・色・強度・曲線・resource識別子などの実値は公開repoへ含めません。
+
+関連shader資産からDiffusion系7 pass、FastBloom系5 pass、宣言keywordと既定propertyを取得しました。保存7 drawのうち6 drawは、この2 shader資産と名前が対応します。最後の書戻し名は現在Editorの組込みshaderにも存在しますが、原作の生成API identityや実際のpass／variant選択を確定したことにはなりません。Dimmerのasset既定値4成分は以前の原作保存既定値とbit一致しましたが、可変writerの証明とは分けます。
+
+Prefabの未解決component slotは3件です。階層上の所在を限定しましたが、EditorのMissing MonoBehaviour判定は0件であり、3件をmissing scriptと断定しません。型・field・動作はUnknownです。次はこの不足と、Film指定からpass／keywordを選ぶ境界をデータ・既存コードで詰め、同一更新の実行証拠が必要な箇所だけを採取候補にします。
+
+公開の `OriginalLiveDataInventory.Capture` はロード済みtyped dataを読み取るEditor専用APIです。元のkey順序、nullと空、worksheet対象camera、明示されたmulti-camera番号を保持し、key選択・補間・runtime登録を行いません。payload取得は明示opt-inで、件数・深さ・総量に上限があります。人工検証は **22/22 PASS**、私有source退避後の公開Control結合も **376/376 PASS**。以前の142秒再生・RGB一致は独立した既存成果として保持し、今回の再実行とは扱いません。[使用範囲](Tools/OriginalLiveRendering/INTEGRATION.md#typedライブデータの読取監査) を参照してください。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## UV scroll／Dimmerの現在property供給
 
 `OriginalPostProcessPropertyState` を追加しました。明示materialのColor／Vectorと、別に指定したglobalの現在値を同期取得し、camera、selected／render serial、入力textureへ結びます。非有限値、materialの解放・shader変更、微小なproperty変更、古い更新や別入力を拒否します。getterは状態を変更せず、通常UIや既存rendererへ自動登録しません。[供給条件](Tools/OriginalLiveRendering/INTEGRATION.md#現在materialとglobalの対取得) を参照してください。
