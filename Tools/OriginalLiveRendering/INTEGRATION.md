@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 評価済みFilmのcode route監査
+
+Editor専用の `OriginalPostFilmRouteAudit.Capture(evaluatedFilm, basePass)` は、評価済み `PostFilmUpdateInfo` と呼出し側が資格化したbase passを受け取ります。現在の `ScreenOverlayRender.Parameter.IsValidity` とkeyword配列を読み、有効なFilmのpass加算とMODE設定／解除、通常color layerで解除されるblend keywordを返します。keyword配列のslot zeroが保持される動作も変更しません。無効FilmはFilm描画なしとして返し、別のdefault／copy経路を補完しません。
+
+これは現行Viewerコードの説明で、原作の実行pass・variant選択やcapability ownerの認定ではありません。`COLOR_ONLY`、stereo等の保持状態を生成せず、color typeをそのwriterと解釈しません。material availabilityと外側の描画分岐も別入力です。未資格化のmovie layer、未知mode／color layout、非有限な有効判定値、不正base passを拒否します。描画やglobal keywordの変更、通常ライブへの登録は行いません。
+
+人工の `OriginalPostFilmRouteAuditValidation.Run` は **56/56 PASS**。modeごとの有効判定・MODE名、inverse、ゼロpower、monochrome alpha、保持slot、拒否条件を確認しました。私有source退避後の公開Control結合も **376/376 PASS**。専用Editorで `-executeMethod OriginalPostFilmRouteAuditValidation.Run -integrationOutput <外部出力先>` を指定し、`route-validation.json` を取得できます。
+
+私有監査ではmusic1001の演出360 keyの一覧と、実Controlを使う918サンプルの表を作成しました。Film252 payloadがserialized field単位でroundtripし、918/918で評価値を取得、332サンプルは補間を使用しました。明示audit camera・保存データ・選択frameによるreplayで、原作owner／音声epochや自然再生との同期は未成立です。
+
+保存資産の276個のprogram aliasを検査し、Film描画なし130、両effect有効で候補variantが各1つとなる772、混合familyの条件外16へ分けました。772は必要な保持keywordが実際に有効である証明ではなく、通常rendererへ自動採用しません。別途、保存原作の先行5 drawは同一runの生成program→object→消費を再照合し、資産内pass候補を各1件へ絞りました。実pass引数の直接観測、混合／copyのprogram identity、別run間のframe対応はUnknownです。旧cache上限と過去Pendingも保持します。
+
+追加採取の準備案は閉鎖GPU fixtureで拒否され、配備・controller・ゲーム起動・ARMを行っていません。新規原作runとRGB／自然再生の追加成功数は0です。次の採取はPS単体でなく、materialのpass指定・keyword状態と同じdrawを結ぶ観測境界が資格化された場合に限定します。
+
 ## typedライブデータの読取監査
 
 今後の調査は、選択楽曲の設定とtyped timeline、関連Prefab／Material／Shader、既存CPU／GPU観測の順に照合します。データにある演出指定、素材上の参照・pass・宣言keyword、実行時の選択・GPU消費は別の証拠です。データや名前の一致だけでruntime bindingを認定しません。追加の原作runは、データと既存コードで解決できなかった有限の観測対象に限定します。

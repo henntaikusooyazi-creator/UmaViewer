@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 演出keyからpass／keyword候補への対応表
+
+保存したmusic1001のFilm252 keyとBloom／Diffusion108 keyを、frame・layer・authored multi-camera番号・mode・color type別のローカル表へ整理しました。Filmのserialized payload252件は復元前後で一致しています。境界前後と区間内の **918サンプル**を実Controlの選択・補間処理へ渡し、全件で評価値を取得しました。うち332件は補間を使用しています。明示audit cameraと保存typed dataのreplayであり、自然再生や原作時刻との同期ではありません。
+
+`OriginalPostFilmRouteAudit` は、評価済みFilmと明示base passから、現在Viewerコードの有効判定、inverseによるpass加算、MODE keywordの設定／解除、blend keywordの解除範囲を説明するEditor専用APIです。既存の有効判定とkeyword配列を参照し、描画・keyword変更・renderer登録は行いません。保持されるkeyword、capability owner、material availability、default/copy経路は別に資格化する必要があります。
+
+選択shaderの保存metadataにある276個のVS／PS aliasを検査し、program・pass・keywordの対応表へ結びました。918件のうち130件はFilm描画なし、788件はFilm有効でした。後者のうち772件はBloom／Diffusion両有効の条件下で保存資産内の候補variantが各1件に絞れ、16件はその条件外として別経路を保留しています。候補が1件でも、必要な `COLOR_ONLY` やstereo等の実状態、Unityが選択したvariantを確認したことにはなりません。color typeからkeyword writerを推測していません。
+
+過去runの保存証拠を再照合し、先行5 drawでは同一runの全bytecode一致した生成objectとGPU消費を結び、保存資産内のpass候補を各1件へ絞りました。実materialへのpass指定を直接観測した証拠とは区別します。旧cacheの上限到達、混合drawと最後のcopyのprogram identity Unknownは維持します。後続の別runにあるCPU inverse値からもコード上の混合pass候補を絞れますが、その別runを旧生成objectへ結合していません。
+
+公開人工試験は **56/56 PASS**、選択metadata parserの閉鎖試験は **10/10 PASS**、私有source退避後の公開Control結合も **376/376 PASS**。PSだけを限定採取する追加run案は、既存の閉鎖GPU fixtureが拒否したため配備前に停止し、controller・ゲーム起動・ARMは0でした。上限や試験を緩和していません。PS取得だけでは共有passの区別が残るため、次の実測対象はmaterialのpass指定とkeyword設定を同じdrawへ結ぶ境界に限定します。
+
+通常renderer、保存候補programの採用条件、自然preview、Coreは変更していません。原作同一frame RGBの追加比較や142秒自然再生は今回は行っていません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
 ## ライブデータを起点とした対応付け
 
 調査順序を **ライブ設定・typed timeline → Prefab／Material／Shader参照 → 保存済みCPU／GPU観測 → 残ったruntime依存だけ採取** へ変更しました。追加の原作runは行っていません。既存rendererや現在property取得APIの動作は保持します。
