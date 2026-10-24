@@ -8,7 +8,7 @@ Shader "Hidden/OriginalRendering/PostProcessDrawValidation"
         #pragma fragment frag
         #include "UnityCG.cginc"
         float4x4 _DrawModel, _DrawVP;
-        float4 _DrawTexelSize;
+        float4 _DrawTexelSize, _DrawUvScaleOffset;
         Texture2D<float4> _MainTex;
         SamplerState point_clamp_sampler;
         struct Input { float4 vertex : POSITION; float2 uv : TEXCOORD0; };
@@ -17,7 +17,7 @@ Shader "Hidden/OriginalRendering/PostProcessDrawValidation"
         {
             Output result;
             result.position = mul(_DrawVP, mul(_DrawModel, input.vertex));
-            result.uv = input.uv;
+            result.uv = input.uv * _DrawUvScaleOffset.xy + _DrawUvScaleOffset.zw;
             if (_DrawTexelSize.y < 0) result.uv.y = 1 - result.uv.y;
             return result;
         }

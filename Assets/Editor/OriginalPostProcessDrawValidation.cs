@@ -45,17 +45,29 @@ public static class OriginalPostProcessDrawValidation
             for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) expected[y * width + x] = new Color32((byte)(x * 11), (byte)(y * 23), 97, (byte)(160 + x));
             input.SetPixels32(expected); input.Apply();
             foreach (bool flip in new[] { false, true })
+            foreach (int uvCase in new[] { 0, 1, 2 })
             {
-                var draw = OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, flip); draw.ValidateCurrent(frame, input);
+                var scale = uvCase == 1 ? new Vector2(-1, 1) : uvCase == 2 ? new Vector2(.5f, .5f) : Vector2.one;
+                var offset = uvCase == 1 ? new Vector2(1, 0) : uvCase == 2 ? new Vector2(.5f, 0) : Vector2.zero;
+                var draw = uvCase == 0
+                    ? OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, flip)
+                    : OriginalPostProcessDrawState.Capture(frame, input, Matrix4x4.identity, Matrix4x4.identity, projection, flip, scale, offset);
+                draw.ValidateCurrent(frame, input);
+                Check(draw.UvScaleOffset == new Vector4(scale.x, scale.y, offset.x, offset.y), "Current command UV arguments and legacy identity.");
                 Check(draw.TexelSize == new Vector4(1f / width, (flip ? -1f : 1f) / height, width, height), "Current descriptor and explicit sign.");
                 Check(draw.GpuViewProjection == GL.GetGPUProjectionMatrix(projection, true), "Fullscreen projection is separate from camera projection.");
                 using (var chain = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(material, 0, width, height, mesh, new OriginalPostProcessChain.Binding("_MainTex", -2, input))))
                 {
-                    var target = chain.Process(camera, color, (stage, m) => { draw.ValidateCurrent(frame, input); m.SetMatrix("_DrawModel", draw.ObjectToWorld); m.SetMatrix("_DrawVP", draw.GpuViewProjection); m.SetVector("_DrawTexelSize", draw.TexelSize); }, null);
+                    var target = chain.Process(camera, color, (stage, m) => { draw.ValidateCurrent(frame, input); m.SetMatrix("_DrawModel", draw.ObjectToWorld); m.SetMatrix("_DrawVP", draw.GpuViewProjection); m.SetVector("_DrawTexelSize", draw.TexelSize); m.SetVector("_DrawUvScaleOffset", draw.UvScaleOffset); }, null);
                     var read = AsyncGPUReadback.Request(target, 0, TextureFormat.RGBA32); read.WaitForCompletion(); Check(!read.hasError, "Draw readback."); var bytes = read.GetData<byte>();
                     for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
                     {
-                        var p = expected[(flip ? height - 1 - y : y) * width + x]; int at = (y * width + x) * 4; report.pixels++;
+                        float u = ((x + .5f) / width) * scale.x + offset.x;
+                        float v = ((y + .5f) / height) * scale.y + offset.y;
+                        if (flip) v = 1 - v;
+                        int sx = Mathf.Clamp(Mathf.FloorToInt(u * width), 0, width - 1);
+                        int sy = Mathf.Clamp(Mathf.FloorToInt(v * height), 0, height - 1);
+                        var p = expected[sy * width + sx]; int at = (y * width + x) * 4; report.pixels++;
                         if (bytes[at] != p.r || bytes[at + 1] != p.g || bytes[at + 2] != p.b || bytes[at + 3] != p.a) throw new Exception("Fullscreen UV/transform RGBA mismatch."); report.rgbaExact++;
                     }
                     Check(chain.ProcessCount == 1, "Current draw completed.");
@@ -70,6 +82,8 @@ public static class OriginalPostProcessDrawValidation
         color.Release(); Reject<InvalidOperationException>(() => snapshot.ValidateCurrent(frame, color), "Released RT rejected."); color.Create();
         var bad = Matrix4x4.identity; bad[0] = float.NaN;
         Reject<ArgumentException>(() => OriginalPostProcessDrawState.Capture(frame, color, bad, Matrix4x4.identity, projection, false), "Non-finite transform rejected.");
+        Reject<ArgumentException>(() => OriginalPostProcessDrawState.Capture(frame, color, Matrix4x4.identity, Matrix4x4.identity, projection, false, new Vector2(float.NaN, 1), Vector2.zero), "Non-finite UV scale rejected.");
+        Reject<ArgumentException>(() => OriginalPostProcessDrawState.Capture(frame, color, Matrix4x4.identity, Matrix4x4.identity, projection, false, Vector2.one, new Vector2(0, float.PositiveInfinity)), "Non-finite UV offset rejected.");
         Reject<InvalidOperationException>(() => OriginalPostProcessDrawState.Capture(default, color, Matrix4x4.identity, Matrix4x4.identity, projection, false), "Missing frame rejected.");
         Reject<InvalidOperationException>(() => OriginalPostProcessDrawState.Capture(frame, null, Matrix4x4.identity, Matrix4x4.identity, projection, false), "Missing draw input rejected.");
         var resized = Target(6, 4); snapshot = OriginalPostProcessDrawState.Capture(frame, resized, Matrix4x4.identity, Matrix4x4.identity, projection, false);

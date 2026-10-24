@@ -1,5 +1,19 @@
 # 実Controlによる独立結合検証
 
+## 現在drawの書戻しUV引数
+
+`OriginalPostProcessDrawState.Capture(frame, input, model, view, projection, inputYFlipped, uvScale, uvOffset)` は、当該draw commandの明示UV引数を `UvScaleOffset=(scale.x, scale.y, offset.x, offset.y)` として保持します。非有限値を拒否し、既存の `ValidateCurrent` でcamera、render／selected serial、textureと寸法の一致を検証します。引数を持たない従来overloadは単位scale・ゼロoffsetを使用し、既存の行列とtexel値は変更しません。利用側は同期prepare内で、そのdrawが実際に使う引数を与えてください。
+
+この値はtexture寸法から推測したTextureMappingではなく、明示したdraw引数です。tint、UV scroll、Dimmer、sampler、backend固有の投影生成元は補完しません。serialは入力RTの内容を凍結せず、同一frame内の別drawの引数まで自動判別しません。
+
+`Invoke-IntegrationValidation.ps1 -PostProcessDrawOnly` の最終人工試験はBuilt-in／URP14で **234/234 PASS、1920画素RGBA一致**です。単位変換、横反転、部分切出し、明示Y反転と異なる寸法を実際のshader入力へ渡し、全RGBAを照合しました。stale／foreign／released入力と非有限UVも拒否します。
+
+私有の候補7段では書戻し直前に現在draw stateを作り、そのUVを接続します。保存UVをcontextから除いても、保存原作入力のdraw244成分がbit一致し、独立896・連続中間896・最終128画素のRGBA一致を維持しました。今回追加した4成分以外の既存draw240成分、CPU producer49成分は同じ保存観測の再評価です。
+
+最終ソースの142秒自然再生は7910描画、左右同時60更新、終端・Viewer復帰・fault／例外0でした。120 camera入力のうち118入力でUVを現在drawから再生成し、保存UV使用0・826段・内部replay2727936画素RGBA一致を確認しました。2入力は候補Film条件外として保留です。原作同一frameの自然RGB一致や、全状態での書戻しshader identityは未証明です。残るretained 3参照と全false／Unknown gate、過去Pendingを維持します。
+
+私有source撤去後の既存Control結合も **376/376 PASS**。
+
 ## MipBiasの現在入力供給
 
 `OriginalPostProcessSamplingMath.EvaluateMipBias(pixelWidth, targetWidth, dynamicWidthScale, temporalMipBias)` は明示した4入力からbias／gainを生成します。target幅とdynamic scaleのfloat32積、pixel幅とのfloat32除算、doubleの対数・符号反転、float32への変換、上限ゼロとtemporal値のminという境界を保持します。非有限値、非正の寸法・scale、積のoverflowや比のunderflowは拒否します。

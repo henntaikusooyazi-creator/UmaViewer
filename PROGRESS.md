@@ -4,6 +4,22 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 書戻しUVの現在draw供給
+
+残っていた4参照のうち、書戻しUV scale/offsetを現在のdraw引数から供給する接続を追加しました。原作側では呼出し元の限定命令、同一buildの内部登録先と実コード先頭、標準Blitの命令記録を照合しています。内部関数の登録先照合は、その関数の呼出しを新たに観測した証拠や、最後のshader生成API identityの証明には拡張しません。
+
+`OriginalPostProcessDrawState` に明示UV引数のoverloadと `UvScaleOffset` を追加しました。既存overloadは単位scale・ゼロoffsetを持ち、既存の行列／texel計算と入力検証を維持します。通常ライブへの自動採用、coverage shader、camera選択の変更はありません。
+
+公開人工GPU試験はBuilt-in／URP14で **234/234 PASS、1920/1920画素RGBA一致**。単位変換に加え、負scaleによる反転、部分切出し、明示Y反転、異なる入力寸法、非有限UVと古いframe等の拒否を確認しました。私有の保存原作入力では、今回のUVを含むdraw情報 **244/244成分bit一致**、既存CPU producer **49/49 bit一致**、独立7 draw **896/896**、連続中間 **896/896**、最終 **128/128画素RGBA一致**でした。同じ保存観測の再評価であり、新規観測数として合算しません。
+
+最終ソースの自然再生は **142秒、7910/7910描画、左右同時60/60更新**で終端・Viewer復帰しました。120 camera入力中、候補Film条件が成立した118入力へ現在drawのUVを供給し、保存UV使用0で826段を実行しました。対象外の2入力は保留です。8回・2727936画素のGPU内部replayは全RGBA一致、renderer/provider faultと例外は0でした。原作の同一frameとの直接RGB比較ではありません。
+
+対象programの87個の段別unique register参照は、現在producer／draw由来84、明示retained 3となりました。残る3参照はUV scroll、Dimmer、書戻しtintです。これは参照の分類であり、全定数の自然生成率ではありません。型やmethodの限定採取でこれらのwriter不在を証明したことにはせず、ゼロや白で解決済みにしません。追加した3原作runはそれぞれStopCompleted、保持handle復旧、hook復元・drain・pin照合、通常終了後の所有配備復元まで成立しました。
+
+projection生成元、variant／sampler、自然TextureMapping、中央下地camera、音声epoch、最後のshader identity、原作同一frameの全画面RGBは引き続き未確定です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。
+
+私有source撤去後の既存Control結合も **376/376 PASS**。
+
 ## MipBiasのproducer接続
 
 原作の対応methodを限定metadata採取へ結び、幅比のfloat32演算、double対数、float32への変換、temporal値とのmin、gain生成の順序を確認しました。`OriginalPostProcessSamplingMath` は確認した算術を明示入力から実行します。保存MipBiasを既定値として補いません。
