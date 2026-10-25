@@ -1,8 +1,33 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-25。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-26。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## 追加2候補の原作実行選択と限定RGB比較
+
+通常Addとinverse VignetteAddのそれぞれを、新しい別々の原作runで確認しました。実pass引数、現在keyword、runtime候補表の選択結果、program／holder、生成時の全bytecodeが一致するPS object、GPUが消費したPSを、同じrunの一意な描画queue範囲へ結びました。保存資産との候補表照合は全行を対象とし、選択された候補だけの名前照合ではありません。
+
+| 対象 | 原作の実pass | 有効keyword | 選択候補のkeyword | Viewerでの限定比較 |
+| --- | --- | --- | --- | --- |
+| 通常Add | 5 | `MODE_ADD` | `MODE_ADD`, `COLOR_ONLY` | 128/128画素RGBA一致 |
+| inverse VignetteAdd | 6 | `MODE_VIGNETTE_ADD` | `MODE_VIGNETTE_ADD`, `COLOR_ONLY` | 128/128画素RGBA一致 |
+
+どちらも `COLOR_ONLY` の有効化を仮定せず、現在の検索キーと候補の宣言keywordを分離したまま既存の選択器・registry・chainを使用しました。Built-in D3D11で、実drawの頂点宣言・頂点／index・GPU定数・texture入力・samplerを用いた各128画素、**合計256/256画素の全RGBA一致、無効sample 0**です。私有shader側のsampling設定は観測されたsamplerへ合わせ、出力補正や自動位置合わせは加えていません。これらは2つの独立したdrawの比較であり、同一原作frameの7段連続比較ではありません。
+
+入力は同じdrawで観測したGPU値です。通常AddはCPU parameterとの対応が未成立、inverse VignetteAddは同じUnity frameの先行CPU呼出しと対応するものの、mode／inverse条件に合う有効layerが2つあり、固有layerの帰属までは認定しません。今回、CPU producerの全定数再生成、URPでの原作入力比較、142秒自然再生、公開Control試験は再実行していません。以前の成功件数は加算しません。
+
+| 自然入力・同期の対象 | 今回の確認範囲 | 残る境界 |
+| --- | --- | --- |
+| global／material property | 対象drawの現在値とGPU入力を保存。既存UV setter呼出しを含む関数境界と4直接calleeを同じ原本で限定静的確認 | 上流writerの正式なowner／lifetimeと非ゼロ自然遷移は未確定。今回の2 drawではUV ownerとの同一更新joinは成立していない |
+| projection・頂点／補間 | 対象drawの実入力で限定RGBを再現 | 自然projection constructorの帰属は未確定 |
+| mask TextureMapping | 既存mask検証を保持 | Film fullscreen入力から自然maskの生成元へは昇格しない |
+| 中央下地camera | 既存の左右に限ったwriter帰属を保持 | 今回のFilm drawは中央下地Dのwriter／camera証明ではない |
+| 時刻・音声epoch | 原作draw内のframe対応を保存 | cue採取の待機条件、Unity frame、owner比較値を同一視しない。原作対Viewerの音声epoch・同一frame最終RGBは未成立 |
+
+採取側は、選択対象外の描画で頂点宣言の読取り枠を消費する問題を修正し、実PSと一意なqueue範囲が一致した有効scope内だけで読み取ります。元の読取上限と停止条件は維持し、私有WARP閉鎖試験19件で対象外scopeと実drawのreadbackを確認しました。最終2 runは **StopCompleted・同一保持handleによる復旧・通常終了後の所有配備復元** が成立しています。途中4件のARM前Pendingと、RGB未完了だったrunは別記録のまま保持します。
+
+公開変更は検証範囲の文書更新です。原作の採取値、native layout、候補shader、私有collectorは含めず、通常renderer・既存API・成功ブランチを変更しません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。次の入力資格化は、global ownerへの上流代入、projection生成呼出し、maskのwriterと中央下地のresource版、音声位置とownerの同一更新観測をそれぞれ別のedgeとして扱います。
 
 ## 複数programの登録と同一runのCPU→GPU照合
 
@@ -10,7 +35,7 @@
 
 公開人工選択試験は **125/125 PASS、4,096/4,096画素RGBA一致**。私有source退避後の公開Control結合も **376/376 PASS**。後者は人工typed入力と一時sceneを使用する条件を確認し、別projectのEditorとprocess・RT・出力を分離して実行しました。共有環境の性能測定には使用しません。
 
-music1001の既存データから、追加対象として通常Addとinverse VignetteAddの2つの保存PS候補を限定しました。72 keyを実Controlへ渡した24評価（usedRatioあり8件）で、独立した式のGPU参照と **12,288/12,288画素RGBA一致**。保存資産の候補を使う比較であり、この2候補の原作runtime選択・生成identityは未確認です。候補shader・実定数・実keyは公開repoへ含めません。
+music1001の既存データから、追加対象として通常Addとinverse VignetteAddの2つの保存PS候補を限定しました。72 keyを実Controlへ渡した24評価（usedRatioあり8件）で、独立した式のGPU参照と **12,288/12,288画素RGBA一致**。この時点では保存資産の候補を使う比較で、2候補の原作runtime選択・生成identityは未確認でした。候補shader・実定数・実keyは公開repoへ含めません。
 
 最終ソースの142秒自然再生は **7,352/7,352更新、左右同時50/50、自然終端・Viewer復帰**。既存7段は100入力・700段、内部replayは **2,727,936画素RGBA一致**。追加2候補は、同じ選択更新のFilmに属するViewer cameraのcolor／raw depthで各16回、合計32回のstandalone probeを行い、**16,384画素RGBA一致**しました。これは追加overlay段単体の自然入力診断であり、元の7段出力を入力する完全な後処理列や原作中央cameraの帰属を認定しません。provider／render fault・例外は0です。
 
@@ -18,7 +43,7 @@ music1001の既存データから、追加対象として通常Addとinverse Vig
 
 同runの対象camera・更新に一意に結んだ評価済みCPU Film／Bloomから、**49/49成分float32 bit一致**を再確認しました。子structのschemaには同じ固定binaryの保存metadataを使用し、親の現行metadataとstrideを再照合しています。CPU値は今回のrunだけを使います。同じrunの実pass・keyword・選択PS・GPU消費へ結び、CPU生成定数と登録programで **独立896/896、中間連続896/896、最終128/128画素RGBA一致**。同じ観測の再評価を独立観測数へ合算しません。
 
-新しい2候補の原作実行選択、全候補の適格性lifetime、自然global writer、TextureMapping、中央camera、音声epoch、原作の同一frame全画面RGBは引き続き別の未確定事項です。過去の未完了readback・Pendingと、各false／Unknown gateを維持します。
+この段階で未確定だった2候補の原作実行選択は、上記の追加観測へ引き継いでいます。全候補の適格性lifetime、自然global writer、TextureMapping、中央camera、音声epoch、原作の同一frame全画面RGBは引き続き別の未確定事項です。過去の未完了readback・Pendingと、各false／Unknown gateを維持します。
 
 ## 自然Filmからのprogram選択とreadback後のRGB比較
 
