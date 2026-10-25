@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## CPU Filmとowner値からの限定RGB再生成
+
+通常Addでは、新しい同一原作更新のCPU parameterと安定したowner値を結び、実Controlで補間を再評価しました。Filmの消費 **24/24成分がfloat32 bit一致、128/128画素RGBA一致**。inverse VignetteAddは過去の独立runを再評価し、消費 **17/17成分** に一致するlayerの値の対応が一意となり、そのCPU Filmから **128/128画素RGBA一致** を確認しました。
+
+Film以外のglobal、texture、geometry等は実drawの観測入力を保持しています。未使用laneの差も保存し、全CB一致、camera帰属、全入力の自然生成とは扱いません。owner値からControlへの一点の対応と、音声epochを含む連続同期も別です。
+
+追加の限定metadataと静的読取りでは、typed receiverの描画callbackからBlitのUV引数生成、時刻controllerの音楽時刻・平滑化・現在時刻更新を追跡しました。中央下地camera、自然projection、maskの頂点／補間入力、同一原作frameの全画面RGBAは未解決です。[対応記録](Tools/OriginalLiveRendering/NATURAL_INPUT_JOIN.md) に確認範囲と次の受入条件を記載しています。
+
+公開変更は文書のみです。正常停止runと途中の上限拒否・接続切断Pending、ゲーム未起動の準備不成立を分離し、所有配備の復元を記録しました。今回の私有試験を、既存の公開Control試験や142秒自然再生の再実行件数へ加算しません。各false／Unknown gateを維持します。
+
 ## 追加2候補の原作実行選択と限定RGB比較
 
 通常Addとinverse VignetteAddのそれぞれを、新しい別々の原作runで確認しました。実pass引数、現在keyword、runtime候補表の選択結果、program／holder、生成時の全bytecodeが一致するPS object、GPUが消費したPSを、同じrunの一意な描画queue範囲へ結びました。保存資産との候補表照合は全行を対象とし、選択された候補だけの名前照合ではありません。

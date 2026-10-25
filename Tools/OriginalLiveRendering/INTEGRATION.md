@@ -1,5 +1,11 @@
 # 実Controlによる独立結合検証
 
+## CPU Filmとowner値の限定接続（2026-10-26）
+
+通常Addでは原作owner値を実Controlへ明示供給し、補間後FilmとCPU producerの消費24成分、限定128画素のRGBA一致を確認しました。inverse VignetteAddは既存観測の消費17成分でlayerの値の対応を一意化し、CPU Filmによる128画素比較を再実行しました。inverseの未採取owner値は補完していません。
+
+既存のControl・producer math・selector・registry・chainを私有検証で使用しました。通常ライブのclock、camera選択、mask mappingを置換した変更ではありません。[NATURAL_INPUT_JOIN.md](NATURAL_INPUT_JOIN.md) に、未使用laneの差、観測GPU入力を保持した範囲、静的に確認したmask／時刻経路と残る検証条件を記録しています。
+
 ## 追加2候補の実行選択と原作入力比較（2026-10-26）
 
 通常Add（実pass 5）とinverse VignetteAdd（実pass 6）を、別々の原作runで実描画へ対応付けました。現在keyword、runtime候補表の選択program／holder、全bytecodeが一致する生成PS objectとGPU消費PSを、同一run・一意なqueue範囲で照合しています。候補表は保存資産の全行・順序を照合し、要求keywordと選択候補の宣言keywordは別の集合として扱います。両対象とも選択候補に `COLOR_ONLY` を含みますが、それを実際の有効keywordへ読み替えません。

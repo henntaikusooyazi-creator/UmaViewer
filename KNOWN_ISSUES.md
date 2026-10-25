@@ -2,6 +2,12 @@
 
 独立検証ブランチ `codex/validate-original-live-integration` の補足です。公開済み描画ブランチ `781ef89` は変更していません。
 
+## 自然入力の対応に関する現在の境界
+
+通常Addのowner値→実Controlの補間→Film消費24成分→128画素RGBA、inverseの一意に対応するlayerの消費17成分→128画素RGBAまで確認しました。値の対応からcameraの正式帰属や全writerの因果関係を推測しません。
+
+原作owner値とControlの一点の対応は、原作とViewerの音声epoch・連続同期契約ではありません。中央下地camera、自然projection constructor、maskの頂点／補間入力とTextureMapping全体、同一原作frameの全画面RGBAは未解決です。確認したBlitのUV引数生成と時刻controllerの静的経路も、この境界を変更しません。[対応記録](Tools/OriginalLiveRendering/NATURAL_INPUT_JOIN.md) を参照してください。
+
 ## 本家起点のコンパイル問題
 
 起点 `07f82e9fa08f23c1cda3a9be3045a09372eae8bb` を使用しています。
