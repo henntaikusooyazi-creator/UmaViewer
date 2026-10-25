@@ -34,8 +34,10 @@ namespace Gallop.Live.Rendering
             public readonly ReadOnlyCollection<string> Requested;
             public readonly long Score;
             public readonly bool CacheHit;
-            internal Decision(Candidate program, string[] requested, long score, bool hit)
-            { Program = program; Requested = Array.AsReadOnly(requested); Score = score; CacheHit = hit; }
+            public int SourcePass => Owner.SourcePass;
+            internal readonly OriginalPostProcessProgramSelection Owner;
+            internal Decision(OriginalPostProcessProgramSelection owner, Candidate program, string[] requested, long score, bool hit)
+            { Owner = owner; Program = program; Requested = Array.AsReadOnly(requested); Score = score; CacheHit = hit; }
         }
         readonly Candidate[] candidates;
         readonly HashSet<string> space;
@@ -74,7 +76,7 @@ namespace Gallop.Live.Rendering
         {
             var requested = Snapshot(effectiveKeywords).Where(relevant.Contains).ToArray();
             string key = string.Join("\n", requested);
-            if (cache.TryGetValue(key, out var saved)) return new Decision(saved.Program, requested, saved.Score, true);
+            if (cache.TryGetValue(key, out var saved)) return new Decision(this, saved.Program, requested, saved.Score, true);
             var wanted = new HashSet<string>(requested, StringComparer.Ordinal);
             Candidate winner = null; long best = long.MinValue;
             foreach (var candidate in candidates)
@@ -87,8 +89,9 @@ namespace Gallop.Live.Rendering
             }
             if (winner == null) throw new NotSupportedException("No explicitly eligible program.");
             if (cache.Count >= maximumEntries) throw new InvalidOperationException("Program selection cache bound reached.");
-            var result = new Decision(winner, requested, best, false); cache.Add(key, result); return result;
+            var result = new Decision(this, winner, requested, best, false); cache.Add(key, result); return result;
         }
+        internal bool HasCandidate(string id) => candidates.Any(c => c.Id == id);
         internal static void ValidateToken(string value)
         {
             if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || value.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))

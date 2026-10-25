@@ -1,5 +1,15 @@
 # 実Controlによる独立結合検証
 
+## catalogを分離したprogram registry
+
+複数の候補表から選択する場合は、`OriginalPostProcessProgramRegistry.Registration(catalog, candidateId, program)` を明示します。ResolveはDecisionの出所catalogを確認し、別のpass／catalogの同名IDへ自動接続しません。既存の直接ID解決経路も保持します。[PROGRAM_SELECTION.md](PROGRAM_SELECTION.md) に所有権と境界を記録しました。
+
+最終ソースの公開選択試験は **125/125 PASS、4,096画素RGBA一致**。私有source退避後の公開Control結合は **376/376 PASS**。人工入力だけの後者は、別project Editorと共有DB・固定port・RT・出力を分離できる条件を確認して実行し、タイミングや性能の証拠にはしません。原作採取と自然再生は順次実行です。
+
+私有検証では実データの通常Add／inverse VignetteAddから保存PS候補2件を追加し、実Controlの24評価で12,288画素、自然camera入力の32回のstandalone段で16,384画素が独立式のGPU参照とRGBA一致しました。これらはasset候補の診断で、追加2件の原作runtime選択は未証明です。自然probeの入力はViewer camera color／raw depthであり、元の7段出力を経た完全な後処理入力とは区別します。
+
+新規の限定原作runでは、早期準備に欠けていたparameter descriptorの作成順を修正し、同一更新・cameraのCPU値を採取できました。型metadata前の読取り拒否、prefix確認、hook creation closure、上限は維持します。評価済みFilm／Bloom→49成分のbit一致→選択PS→独立／連続中間の各896画素、最終128画素のRGBA一致まで同じrunで照合しました。子struct schemaの一部は同じ固定binaryの保存metadataを使い、実値を別runから補っていません。source clock・全画面RGBの契約や過去Pendingは変更しません。
+
 ## 現在のFilm・keywordを使うprogram provider
 
 明示catalogと採点profileを受ける `OriginalPostProcessProgramSelection`、同一選択更新のFilmと現在keywordを結ぶ `OriginalLivePostFilmProgramProvider`、stage直前に登録programを解決するchainのPass overloadを追加しました。pass固有のkeyword範囲を適用した後にcacheし、同点は明示候補順を維持します。原作の実定数・native layout・候補shaderは公開実装へ含めません。

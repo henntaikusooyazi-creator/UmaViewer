@@ -95,13 +95,36 @@ public static class OriginalProgramSelectionValidation
         keys.thisList.Add(new LiveTimelineKeyPostFilmData { frame = 300, filmMode = PostFilmMode.None, filmPower = 0, color0 = Color.white });
         var capture = typeof(LiveTimelineControl).GetMethod("CapturePostFilm", BindingFlags.NonPublic | BindingFlags.Instance);
         var groups = new Dictionary<int, Selector> { { 17, Table(17) }, { 18, Table(18) } };
+        var entries = new[] {
+            new OriginalPostProcessProgramRegistry.Registration(groups[17], "soft", softProgram),
+            new OriginalPostProcessProgramRegistry.Registration(groups[17], "bright", brightProgram),
+            new OriginalPostProcessProgramRegistry.Registration(groups[18], "soft", brightProgram),
+            new OriginalPostProcessProgramRegistry.Registration(groups[18], "bright", brightProgram) };
+        var registry = new OriginalPostProcessProgramRegistry(entries);
+        entries[0] = null;
+        Check(registry.Count == 4 && registry.Resolve(groups[17].Select(new[] { "MODE_VIGNETTE_ADD" })) == softProgram &&
+            registry.Resolve(groups[18].Select(new[] { "MODE_VIGNETTE_ADD" })) == brightProgram, "Identical IDs in different passes resolve independently and caller array mutation has no effect.");
+        Reject<NotSupportedException>(() => registry.Resolve(Table(17).Select(new[] { "MODE_VIGNETTE_ADD" })));
+        Reject<ArgumentNullException>(() => registry.Resolve(null));
+        Reject<ArgumentException>(() => new OriginalPostProcessProgramRegistry.Registration(groups[17], "foreign", softProgram));
+        Reject<ArgumentNullException>(() => new OriginalPostProcessProgramRegistry.Registration(null, "soft", softProgram));
+        Reject<ArgumentNullException>(() => new OriginalPostProcessProgramRegistry.Registration(groups[17], "soft", null));
+        Reject<ArgumentNullException>(() => new OriginalPostProcessProgramRegistry(null));
+        Reject<ArgumentException>(() => new OriginalPostProcessProgramRegistry(Array.Empty<OriginalPostProcessProgramRegistry.Registration>()));
+        Reject<ArgumentException>(() => new OriginalPostProcessProgramRegistry(new[] { entries[1], entries[1] }));
+        Reject<ArgumentException>(() => new OriginalPostProcessProgramRegistry(new OriginalPostProcessProgramRegistry.Registration[] { null }));
+        var partial = new OriginalPostProcessProgramRegistry(new[] { entries[1] });
+        Reject<NotSupportedException>(() => partial.Resolve(groups[17].Select(new[] { "MODE_VIGNETTE_ADD" })));
+        Reject<ArgumentException>(() => new OriginalPostProcessProgramRegistry(Enumerable.Range(0, 129).Select(i =>
+            new OriginalPostProcessProgramRegistry.Registration(Table(i), "soft", softProgram))));
+        Check(groups[17].Select(new[] { "MODE_LERP" }).SourcePass == 17, "Miss and hit decisions preserve the originating pass.");
         var provider = new OriginalLivePostFilmProgramProvider(() => bridge.LastFrame, 1, 17, source, space, pass => groups.TryGetValue(pass, out var group) ? group : null);
         OriginalLivePostFilmProgramProvider.Observation observation = null, first = null; OriginalCameraFrame current = default, firstFrame = default;
         int resolutions = 0, renders = 0; byte[] firstPixels = null, changedPixels = null;
         using (var chain = new OriginalPostProcessChain(new OriginalPostProcessChain.Pass(() =>
         {
             resolutions++; observation.ValidateCurrent(current);
-            return observation.Selection.Program.Id == "soft" ? softProgram : observation.Selection.Program.Id == "bright" ? brightProgram : throw new NotSupportedException("Unregistered program.");
+            return registry.Resolve(observation.Selection);
         }, 32, 16, null, new OriginalPostProcessChain.Binding("_MainTex", -1))))
         using (var producer = new OriginalCameraProducer(32, 16))
         {

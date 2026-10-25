@@ -4,6 +4,22 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 複数programの登録と同一runのCPU→GPU照合
+
+`OriginalPostProcessProgramRegistry` を追加しました。catalog instanceと候補IDを組にして登録するため、別passの同名IDや、同じpass／IDを持つ別catalogへ誤接続しません。選択結果は出所を保持し、登録なし・重複・変更済みmaterialを拒否します。通常rendererへの自動登録は追加していません。
+
+公開人工選択試験は **125/125 PASS、4,096/4,096画素RGBA一致**。私有source退避後の公開Control結合も **376/376 PASS**。後者は人工typed入力と一時sceneを使用する条件を確認し、別projectのEditorとprocess・RT・出力を分離して実行しました。共有環境の性能測定には使用しません。
+
+music1001の既存データから、追加対象として通常Addとinverse VignetteAddの2つの保存PS候補を限定しました。72 keyを実Controlへ渡した24評価（usedRatioあり8件）で、独立した式のGPU参照と **12,288/12,288画素RGBA一致**。保存資産の候補を使う比較であり、この2候補の原作runtime選択・生成identityは未確認です。候補shader・実定数・実keyは公開repoへ含めません。
+
+最終ソースの142秒自然再生は **7,352/7,352更新、左右同時50/50、自然終端・Viewer復帰**。既存7段は100入力・700段、内部replayは **2,727,936画素RGBA一致**。追加2候補は、同じ選択更新のFilmに属するViewer cameraのcolor／raw depthで各16回、合計32回のstandalone probeを行い、**16,384画素RGBA一致**しました。これは追加overlay段単体の自然入力診断であり、元の7段出力を入力する完全な後処理列や原作中央cameraの帰属を認定しません。provider／render fault・例外は0です。
+
+原作CPU入力が前回0件だった原因は、早期shader監視のhook準備が型metadata取得より先に走り、条件付きのparameter hook作成が省略されていたことでした。最初のenable後のhook追加は禁止する既存方針を保持し、entry prefixを確認した無効descriptorを先に準備します。型metadata未確定時の入力読取り拒否と元の上限は維持しました。私有の追加閉鎖試験16件と既存ABI等214件を通し、新規原作runはStopCompleted・保持handle復旧・通常終了後の所有配備復元まで成立しています。
+
+同runの対象camera・更新に一意に結んだ評価済みCPU Film／Bloomから、**49/49成分float32 bit一致**を再確認しました。子structのschemaには同じ固定binaryの保存metadataを使用し、親の現行metadataとstrideを再照合しています。CPU値は今回のrunだけを使います。同じrunの実pass・keyword・選択PS・GPU消費へ結び、CPU生成定数と登録programで **独立896/896、中間連続896/896、最終128/128画素RGBA一致**。同じ観測の再評価を独立観測数へ合算しません。
+
+新しい2候補の原作実行選択、全候補の適格性lifetime、自然global writer、TextureMapping、中央camera、音声epoch、原作の同一frame全画面RGBは引き続き別の未確定事項です。過去の未完了readback・Pendingと、各false／Unknown gateを維持します。
+
 ## 自然Filmからのprogram選択とreadback後のRGB比較
 
 確認済みの選択規則を、呼出し側が明示する候補表・適格性・採点profileとして接続しました。同じ選択更新のFilm、camera、現在global／material localを取得し、既存のFilm命令順を適用してからpass固有のkeyword範囲へ投影します。選択IDは明示registryからstage直前に解決します。通常UI・固定Pass・既存のkeyword writerは保持し、原作の定数や候補shaderは公開コードへ含めません。[APIと境界](Tools/OriginalLiveRendering/PROGRAM_SELECTION.md) を参照してください。
