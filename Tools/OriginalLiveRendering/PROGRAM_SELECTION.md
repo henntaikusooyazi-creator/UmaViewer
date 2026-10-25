@@ -1,0 +1,29 @@
+# 現在のFilm・keywordからの明示program選択
+
+この経路は明示登録のTestOnly APIです。通常UIや通常ライブのshader選択を置換しません。原作の内部layout、実際の採点定数、候補programと採取値は公開コードに含めません。
+
+`OriginalPostProcessProgramSelection` は、呼出し側が資格化したsource pass、宣言keyword集合、pass固有の有効範囲、順序付き候補、候補ごとの適格性、採点profileとcache上限を必要とします。要求集合をpass範囲へ投影してからcacheを検索し、miss時は共有keywordへの加点と未要求keywordへの減点を評価します。同点は先頭候補を保持します。候補が宣言するkeywordを有効化する処理はありません。
+
+候補と集合は複製され、後から変更できません。cacheはこのinstanceの明示された固定contextだけに属します。pass、候補順序、適格性やprofileのowner状態が変わった場合は新しいinstanceを供給してください。上限到達時に未知のkeyを黙って退避・再利用せず拒否します。全候補不適格や不正入力も成功として保存しません。このcacheは原作cacheのlifetimeやinvalidationを再現するものではありません。
+
+`OriginalLivePostFilmProgramProvider` は同じselected updateのcamera・Film layerを取得し、既存の有効判定、inverseによる明示base passへの加算、通常FilmのMODE／blend命令の説明を使用します。開始globalとmaterial localは別々に取得し、Film命令をglobal側へ適用した後にlocalを結合します。movie等の未資格化familyは拒否し、無効Filmではprogramを作りません。color typeから保持keywordを推定しません。
+
+`OriginalPostProcessKeywordState` とproviderのObservationは同期callback内で使用します。camera、render／selected serial、選択frame参照、source material・shader・local keyword、対象globalが変化した場合は拒否します。外部CommandBufferに未実行で積まれた命令や、原作globalのwriter・時刻契約を確定するAPIではありません。serialが同じことだけで、再利用されるRT内容が永続保存された保証にもなりません。
+
+選択されたIDを呼出し側の明示registryで `OriginalPostProcessChain.Program` に対応させます。未登録IDは保留・拒否し、別programへのfallbackを追加しません。chainの新しいPass overloadはstageごとに一度だけprogramを解決します。prepareとtexture resolver後にもmaterial／shader／local keywordを検証し、失敗時はsuccess countを進めずRT・sRGB状態を復元します。material propertyの変更は呼出し側が所有し、rollbackしません。従来の固定Pass constructorと未登録時の経路は維持します。
+
+Programは登録済みmaterial/passのhandleです。Unityが実際に消費した全bytecodeのidentityや、global keywordに依存する全variantの同一性を認定しません。私有の限定比較では、確認済みの単一programだけをregistryへ登録し、他の候補を選んだ入力は成功数へ含めません。
+
+公開人工検証は、外部出力先を指定して専用Editorで実行します。
+
+```text
+-executeMethod OriginalProgramSelectionValidation.Run -integrationOutput <external-output>
+```
+
+実Controlのtyped Film選択からprovider、選択cache、dynamic chain、独立した固定program GPU描画までをBuilt-in／URP14で比較します。原作asset・private shader・実採取値は不要です。異なるFilmによる可視RGB変化、inverse、Filmなし、stale／keyword変更、未登録program、境界入力も対象です。
+
+Unity 2022.3.62f3／D3D11の最終ソースで **99/99 PASS、4,096/4,096画素RGBA一致**。各pipelineで4回の選択描画とFilmなし1回を実行し、同じ要求のcache hit、別Filmへのprogram切替、prepare／texture resolverによる登録keyword変更の拒否を確認しました。人工入力の結果であり、原作との自然時刻・全画面RGB一致ではありません。
+
+初回compileでは、同名fieldをanchorにしたhelper追加が隣のnested型へ入る問題を検出しました。class構造を限定して正しいRender型へ配置し、以後は単一文字列anchorだけで挿入先を決めません。失敗logを保持し、修正後の新規出力先で上記検証を完了しています。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と過去Pendingを維持します。

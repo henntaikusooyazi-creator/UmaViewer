@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 自然Filmからのprogram選択とreadback後のRGB比較
+
+確認済みの選択規則を、呼出し側が明示する候補表・適格性・採点profileとして接続しました。同じ選択更新のFilm、camera、現在global／material localを取得し、既存のFilm命令順を適用してからpass固有のkeyword範囲へ投影します。選択IDは明示registryからstage直前に解決します。通常UI・固定Pass・既存のkeyword writerは保持し、原作の定数や候補shaderは公開コードへ含めません。[APIと境界](Tools/OriginalLiveRendering/PROGRAM_SELECTION.md) を参照してください。
+
+公開人工検証は **99/99 PASS、4,096/4,096画素RGBA一致**。実Controlの選択からBuilt-in／URP14の動的program描画までを独立した固定program経路と比較し、別FilmでRGBが変わること、cache、inverse、Filmなし、stale状態と描画直前のkeyword変更を確認しました。私有sourceを退避した公開Control結合 **376/376**、route監査 **137/137**、既存chain **46/46 PASS** も最終ソースで確認しています。
+
+新しい限定原作runでは、描画追跡経路を保持して7段すべてのreadbackが完了しました。同一runの実pass、keyword、選択programと全bytecode一致したPS生成objectをGPU消費へ結び、選択規則を通した候補programで **独立896/896、中間連続896/896、最終領域128/128画素のRGBA一致**を確認しました。同じ保存観測の別再評価であり、独立観測数へ合算しません。このrunはCPU Film／Bloom入力の採取が0件のため、producer laneは同一drawの観測GPU定数を明示使用しています。過去のCPU算術49成分一致を今回の再検証へ加算しません。原作入力比較はBuilt-in D3D11の限定領域です。
+
+最終ソースのmusic1001は **142秒で自然終端・Viewer復帰**。初回late-only1件を保留し、7,167/7,167更新を描画、左右同時45/45更新を確認しました。90 camera入力のうち88入力は現在Film・keywordで登録済みprogramを選択し616段を実行、同一catalog内のcache hitは87件です。対象pass外の2入力は保留、未登録programへの置換は0。GPU内部replayは7回・49段・**2,386,944/2,386,944画素RGBA一致**で、provider／render fault・例外は0でした。原作とViewerの同一frame画像の比較ではありません。
+
+原作runはStopCompleted、保持handle復旧、hook復元・drain・pin照合、通常終了後の所有配備復元が成立しました。旧runの未完了readbackと過去Pendingは変更しません。現在は観測済みの単一programを登録する限定経路であり、他variant、全候補の適格性lifetime、自然global writer、中央camera、TextureMapping、音声epoch、copy shaderの生成identity、全画面RGBは独立した未確定事項です。全false／Unknown gateを維持します。
+
 ## 混合programのcache miss・追加・hitの実観測
 
 追加の限定原作runで、対象shaderのselector、cache検索、近似検索の呼出しと戻り値を結びました。先行する1呼出しでは検索が不成立となり、近似検索が返したprogramと、挿入側の再検索後に保存されたentryが対応しました。同じrunの対象drawではcache hitを観測し、返されたprogram・holder・PS binding・全bytecode一致したPS生成objectまで照合しました。store命令のPCそのものをhookした結果ではなく、実呼出しの入出力と資格化した制御フローによる限定判定です。

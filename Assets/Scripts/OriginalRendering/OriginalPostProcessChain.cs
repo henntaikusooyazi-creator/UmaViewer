@@ -12,6 +12,28 @@ namespace Gallop.Live.Rendering
     // original-game shader, camera, depth, or clock mapping.
     public sealed class OriginalPostProcessChain : IOriginalCameraPostProcessor, IDisposable
     {
+        public sealed class Program
+        {
+            public readonly Material Material;
+            public readonly int ShaderPass;
+            readonly Shader shader;
+            readonly string[] keywords;
+            public Program(Material material, int shaderPass)
+            {
+                if (!material || !material.shader || !material.shader.isSupported || shaderPass < 0 || shaderPass >= material.passCount)
+                    throw new ArgumentException("An available registered program is required.");
+                Material = material; ShaderPass = shaderPass; shader = material.shader;
+                keywords = material.shaderKeywords; Array.Sort(keywords, StringComparer.Ordinal);
+            }
+            internal void Validate()
+            {
+                if (!Material || Material.shader != shader || !shader || !shader.isSupported || ShaderPass >= Material.passCount)
+                    throw new InvalidOperationException("The registered program changed or became unavailable.");
+                var current = Material.shaderKeywords; Array.Sort(current, StringComparer.Ordinal);
+                if (current.Length != keywords.Length) throw new InvalidOperationException("Registered program keywords changed.");
+                for (int i = 0; i < current.Length; i++) if (current[i] != keywords[i]) throw new InvalidOperationException("Registered program keywords changed.");
+            }
+        }
         public readonly struct Binding
         {
             public readonly string Property;
@@ -40,12 +62,20 @@ namespace Gallop.Live.Rendering
             internal readonly bool UsesMesh;
             public readonly int ShaderPass, Width, Height;
             internal readonly Binding[] Bindings;
+            internal readonly Func<Program> ResolveProgram;
             public Pass(Material material, int shaderPass, int width, int height,
                 Mesh mesh, params Binding[] bindings)
             {
                 if (!material || !material.shader || !material.shader.isSupported || shaderPass < 0 || shaderPass >= material.passCount || width <= 0 || height <= 0)
                     throw new ArgumentException("A valid program, pass and target size are required.");
                 Material = material; ShaderPass = shaderPass; Width = width; Height = height; Mesh = mesh; UsesMesh = mesh;
+                Bindings = bindings == null ? Array.Empty<Binding>() : (Binding[])bindings.Clone();
+            }
+            public Pass(Func<Program> program, int width, int height, Mesh mesh, params Binding[] bindings)
+            {
+                ResolveProgram = program ?? throw new ArgumentNullException(nameof(program));
+                if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+                Width = width; Height = height; Mesh = mesh; UsesMesh = mesh;
                 Bindings = bindings == null ? Array.Empty<Binding>() : (Binding[])bindings.Clone();
             }
         }
@@ -95,11 +125,16 @@ namespace Gallop.Live.Rendering
                 for (int i = 0; i < passes.Length; i++)
                 {
                     var pass = passes[i];
-                    if (!pass.Material || !pass.Material.shader || !pass.Material.shader.isSupported || pass.ShaderPass >= pass.Material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
+                    var program = pass.ResolveProgram != null ? pass.ResolveProgram() ?? throw new InvalidOperationException("Program resolution returned no registered program.") : null;
+                    program?.Validate();
+                    var material = program != null ? program.Material : pass.Material;
+                    int shaderPass = program != null ? program.ShaderPass : pass.ShaderPass;
+                    if (!material || !material.shader || !material.shader.isSupported || shaderPass >= material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
                         throw new InvalidOperationException("The explicit pass inputs are unavailable.");
-                    prepare?.Invoke(i, pass.Material);
-                    if (!input || !input.IsCreated() || !pass.Material || !pass.Material.shader || !pass.Material.shader.isSupported ||
-                        pass.ShaderPass >= pass.Material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
+                    prepare?.Invoke(i, material);
+                    program?.Validate();
+                    if (!input || !input.IsCreated() || !material || !material.shader || !material.shader.isSupported ||
+                        shaderPass >= material.passCount || (pass.UsesMesh && !pass.Mesh) || !targets[i].IsCreated())
                         throw new InvalidOperationException("The prepared pass inputs are unavailable.");
                     Texture blitSource = i == 0 ? input : targets[i - 1];
                     foreach (var binding in pass.Bindings)
@@ -110,17 +145,18 @@ namespace Gallop.Live.Rendering
                         if (texture == targets[i]) throw new InvalidOperationException("A texture aliases the current output.");
                         if (texture is RenderTexture target && !target.IsCreated())
                             throw new InvalidOperationException("A required texture has been released.");
-                        pass.Material.SetTexture(binding.Property, texture);
+                        material.SetTexture(binding.Property, texture);
                         if (binding.Property == "_MainTex") blitSource = texture;
                     }
+                    program?.Validate();
                     GL.sRGBWrite = false;
                     RenderTexture.active = targets[i]; GL.Clear(false, true, Color.clear);
                     if (pass.UsesMesh)
                     {
-                        if (!pass.Material.SetPass(pass.ShaderPass)) throw new InvalidOperationException("The explicit shader pass is unavailable.");
+                        if (!material.SetPass(shaderPass)) throw new InvalidOperationException("The explicit shader pass is unavailable.");
                         Graphics.DrawMeshNow(pass.Mesh, Matrix4x4.identity);
                     }
-                    else Graphics.Blit(blitSource, targets[i], pass.Material, pass.ShaderPass);
+                    else Graphics.Blit(blitSource, targets[i], material, shaderPass);
                     completed?.Invoke(i, targets[i]);
                 }
                 ProcessCount++; return targets[targets.Length - 1];

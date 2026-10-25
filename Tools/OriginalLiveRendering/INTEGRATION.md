@@ -1,5 +1,15 @@
 # 実Controlによる独立結合検証
 
+## 現在のFilm・keywordを使うprogram provider
+
+明示catalogと採点profileを受ける `OriginalPostProcessProgramSelection`、同一選択更新のFilmと現在keywordを結ぶ `OriginalLivePostFilmProgramProvider`、stage直前に登録programを解決するchainのPass overloadを追加しました。pass固有のkeyword範囲を適用した後にcacheし、同点は明示候補順を維持します。原作の実定数・native layout・候補shaderは公開実装へ含めません。
+
+登録外program、未知family、古い更新、変更済みkeywordを別の候補や前回値で補完しません。無効Filmは描画なしとして返します。通常ライブへの自動登録と既存固定Passは保持します。source passや候補の適格性、保持globalの生成ownerは呼出し側が資格化する必要があります。API境界と実行方法は [PROGRAM_SELECTION.md](PROGRAM_SELECTION.md) を参照してください。
+
+最終ソースの公開人工試験は **99/99 PASS、4,096画素RGBA一致**。私有source退避後の公開Control結合 **376/376**、route監査 **137/137**、既存chain試験 **46/46 PASS** も確認しました。私有の新規原作runでは7段のreadbackを完了し、同一runのkeyword・実pass・選択PSと保存入力を使った独立／連続中間の各896画素、最終領域128画素がRGBA一致しました。producer laneは今回観測したGPU定数であり、同runで取得できなかったCPU入力を過去runから補いません。
+
+music1001の142秒自然再生では現在Film・keywordから88入力のprogramを選択し、616段を実行しました。対象pass外2入力を保留し、内部GPU replayは2,386,944画素RGBA一致。単一の確認済みprogramを登録した限定経路であり、原作全候補の自然選択や同一frame全画面一致ではありません。旧未完了readback・Pendingと各false／Unknown gateは保持します。
+
 ## selectorの実呼出しとcache entryの対応
 
 追加の限定観測では、混合programのselector内で、検索不成立、近似検索の入力と戻り値、挿入側の再検索、呼出し後のentryを対応付けました。その後、同一runの対象drawで検索成功と同じprogramの返却を観測し、同一更新のPS bindingと全bytecode一致した生成objectへ結びました。既存の `CompareProgramKeywords` は集合比較のままで、Unityの選択処理を代行する実装には変更していません。

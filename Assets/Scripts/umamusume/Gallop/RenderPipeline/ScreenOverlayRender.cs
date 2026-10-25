@@ -344,6 +344,18 @@ namespace Gallop.RenderPipeline
 
             private bool _isUVMovieNoScale;
 
+            // Describe the normal-layer commands for an explicit, evaluated Film.
+            // This leaves engine state untouched and preserves the retained zero slot.
+            public static void VisitNormalFilmKeywordCommands(int mode, System.Action<string, bool> command)
+            {
+                if (mode < 1 || mode > 7) throw new System.ArgumentOutOfRangeException(nameof(mode));
+                if (command == null) throw new System.ArgumentNullException(nameof(command));
+                for (int i = 0; i < SHADER_KEYWORD_MODE.Length; i++)
+                    if (i != mode) command(SHADER_KEYWORD_MODE[i], false);
+                command(SHADER_KEYWORD_MODE[mode], true);
+                for (int i = 1; i < SHADER_KEYWORD_BLEND.Length; i++) command(SHADER_KEYWORD_BLEND[i], false);
+            }
+
             private void SetShaderKeyword(
                 CommandBuffer cmd,
                 int id,
