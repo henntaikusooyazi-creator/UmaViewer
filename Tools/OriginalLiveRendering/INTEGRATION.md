@@ -1,5 +1,15 @@
 # 実Controlによる独立結合検証
 
+## selectorの実呼出しとcache entryの対応
+
+追加の限定観測では、混合programのselector内で、検索不成立、近似検索の入力と戻り値、挿入側の再検索、呼出し後のentryを対応付けました。その後、同一runの対象drawで検索成功と同じprogramの返却を観測し、同一更新のPS bindingと全bytecode一致した生成objectへ結びました。既存の `CompareProgramKeywords` は集合比較のままで、Unityの選択処理を代行する実装には変更していません。
+
+判定には完了した呼出し範囲、実際の検索結果、同じnamespaceとkey、選択program、描画側の一意なqueue範囲が必要です。検索不成立だけでentry追加とはせず、先行するentry追加と後のhitから連続lifetimeや全writer不変を推測しません。store命令の直接PC trace、追加時のcamera帰属、別familyや全候補の動作は別の未確定事項です。
+
+今回の補助readbackは未完了です。描画前に取得したPS bindingと、画像を読出してRGBを比較する条件は別に判定し、readback未完了をRGB成功へ変更していません。従来の原作RGB比較・142秒自然previewは過去の独立した証拠です。公開文書のみの更新なのでUnity／公開Control試験は再実行せず、文書差分と公開範囲を確認します。
+
+私有閉鎖検証はnative **18/18**、読取・判定model **8/8 PASS**。最終原作runのStopCompleted・保持handle復旧・通常終了後の所有配備復元を確認しました。途中のPendingと未起動の準備失敗は保持し、各false／Unknown gateも変更しません。
+
 ## CommandBufferのkeyword順序と実pass引数
 
 `OriginalPostFilmRouteAudit.CaptureGlobalTransition(evaluatedFilm, basePass, initialGlobalKeywords)` は、呼出し側が明示した開始global集合に、既存の `Render.Apply` が記録する設定／解除だけを適用します。入力を変更せず、Film描画なしでは集合を保持します。開始集合が未取得の場合に空集合で補完せず、未実行CommandBufferの状態を `Material.shaderKeywords` や現在のglobal getterから推測しないでください。
@@ -18,7 +28,7 @@ MODE／blendの変更はCommandBufferのglobal命令です。material側のlocal
 
 `OriginalPostFilmRouteAudit.CompareProgramKeywords(effective, lookupKey, selectedProgramKey, declaration)` は、明示された4集合の隣接する差と一致判定を返すEditor専用APIです。runtime検索キーと選択候補のキーを別々に扱うため、選択候補の宣言にだけ存在するkeywordを、実際の有効bitへ昇格させません。program identity、同一更新、cacheのhit／miss、選択分岐の証明は別途必要です。
 
-限定原作観測では、同じ混合drawの検索cache、選択programとholder、GPUで消費したPS、全bytecode一致した生成objectを対応付けました。検索側にないkeywordを含む候補が選ばれており、資格化したmiss時の近似検索と同点先頭優先の評価結果にも一致します。これはkeyword setterがそのbitを有効にした証明ではありません。実際のcache hit／miss分岐と過去のcache生成呼出しは未traceのままです。
+前回の限定原作観測では、同じ混合drawの検索cache、選択programとholder、GPUで消費したPS、全bytecode一致した生成objectを対応付けました。検索側にないkeywordを含む候補が選ばれており、資格化したmiss時の近似検索と同点先頭優先の評価結果にも一致します。これはkeyword setterがそのbitを有効にした証明ではありません。その前回drawのcache hit／miss分岐と過去のcache生成呼出しは未traceのままです。
 
 空集合を渡す場合も呼出し側の明示入力が必要です。欠落入力、重複、不正token、上限超過は拒否し、取得した集合を複製して保持します。原作の内部layout、保存値、候補bytecode、選択式を公開実装へ含めず、通常rendererと従来のroute監査を維持しています。検証は既存の `OriginalPostFilmRouteAuditValidation.Run` で実行します。
 

@@ -4,13 +4,27 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 混合programのcache miss・追加・hitの実観測
+
+追加の限定原作runで、対象shaderのselector、cache検索、近似検索の呼出しと戻り値を結びました。先行する1呼出しでは検索が不成立となり、近似検索が返したprogramと、挿入側の再検索後に保存されたentryが対応しました。同じrunの対象drawではcache hitを観測し、返されたprogram・holder・PS binding・全bytecode一致したPS生成objectまで照合しました。store命令のPCそのものをhookした結果ではなく、実呼出しの入出力と資格化した制御フローによる限定判定です。
+
+要求されたkeywordは `MODE_VIGNETTE_ADD`、選択programの候補キーはそれに `COLOR_ONLY` を含むものでした。今回も `COLOR_ONLY` の有効化は観測していません。近似検索の選択結果と、その後のcache利用を別々に確認できたため、宣言keywordを実際の有効bitへ読み替えずに対応を説明できます。
+
+先行するentry追加と対象drawのhitは、同じshader・group・検索キー・program・PS objectに対応します。ただし、追加時のcamera帰属、間の全invalidation／writer閉包、entryの連続lifetime、他の検索キー・全候補への適用は未証明です。前回runのsnapshotを遡って実行分岐の証拠には変更しません。
+
+最終runは **StopCompleted**、同じ保持handleによる復旧、hook復元・drain・pin照合、通常終了後の所有配備復元が成立しました。新規の私有閉鎖検証はnative **18/18**、読取・判定model **8/8 PASS**。今回は補助の画像readbackが未完了なので、GPUで確認したのはPS bindingと生成objectのidentityです。原作RGB replay、公開Control結合、142秒のViewer自然再生は再実行しておらず、過去の成功に加算しません。公開変更は文書のみで、通常renderer・variant選択・既存APIは変更していません。
+
+準備中に、先行VSを見た重複除外がPSまで除外する問題と、起動時の多数のpassで監視範囲を消費する問題を修正しました。shader単位の資格化、cold VS→PS順序と大量の対象外入力のfixtureを追加し、容量・読取上限は維持しました。別Unityと重複した閉鎖GPU試験は受入れから分離し、不在確認後に再検証しています。未起動の接続待ち失敗と途中原作runのPendingはそれぞれ保持し、最終runの成功へ置換していません。
+
+`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
 ## 有効bit・検索キー・選択候補・宣言の比較
 
 Editor専用の `OriginalPostFilmRouteAudit.CompareProgramKeywords` を追加しました。有効keyword、runtime検索キー、選択されたprogramの候補キー、保存assetの宣言を、呼出し側が明示した4つの集合として比較します。検索キーと候補キーの差を、そのkeywordの有効化と読み替えません。program identityと同一更新の対応は別の証拠が必要です。
 
 追加の限定原作観測では、混合drawの同一更新について、検索キャッシュ、選択program、holder、GPUのPS object、全bytecode一致による生成objectを結びました。有効集合とキャッシュの検索キーに `COLOR_ONLY` はなく、選択された候補キーと保存assetの宣言には存在します。確認した検索ループの採点と同点時の先頭優先を実候補表へ適用すると、観測された選択と一致しました。keywordの暗黙的な有効化を仮定せず、この対応を説明できます。
 
-観測したのは同一更新のキャッシュとprogramの対応です。そのdrawでcache hit／missのどちらを実行したか、以前にそのcache entryを作った呼出しは直接traceしていません。VSとPSは実holderのstageで区別し、runtime indexと保存variant番号の一致だけをidentityの根拠にしません。他family、全候補、同一原作frameのViewer RGB一致は別の未確定事項です。
+前回観測したのは同一更新のキャッシュとprogramの対応です。その前回drawでcache hit／missのどちらを実行したか、以前にそのcache entryを作った呼出しは直接traceしていません。VSとPSは実holderのstageで区別し、runtime indexと保存variant番号の一致だけをidentityの根拠にしません。他family、全候補、同一原作frameのViewer RGB一致は別の未確定事項です。
 
 null入力を空集合で補完せず、重複・不正token・上限超過を拒否します。入力の並べ替えと複製により、後から呼出し側の配列が変更されても結果を保持します。Unityの選択規則を実装するAPIではなく、通常rendererの登録・keyword writer・pass選択は変更しません。
 
