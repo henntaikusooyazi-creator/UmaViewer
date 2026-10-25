@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 有効bit・検索キー・選択候補・宣言の比較
+
+Editor専用の `OriginalPostFilmRouteAudit.CompareProgramKeywords` を追加しました。有効keyword、runtime検索キー、選択されたprogramの候補キー、保存assetの宣言を、呼出し側が明示した4つの集合として比較します。検索キーと候補キーの差を、そのkeywordの有効化と読み替えません。program identityと同一更新の対応は別の証拠が必要です。
+
+追加の限定原作観測では、混合drawの同一更新について、検索キャッシュ、選択program、holder、GPUのPS object、全bytecode一致による生成objectを結びました。有効集合とキャッシュの検索キーに `COLOR_ONLY` はなく、選択された候補キーと保存assetの宣言には存在します。確認した検索ループの採点と同点時の先頭優先を実候補表へ適用すると、観測された選択と一致しました。keywordの暗黙的な有効化を仮定せず、この対応を説明できます。
+
+観測したのは同一更新のキャッシュとprogramの対応です。そのdrawでcache hit／missのどちらを実行したか、以前にそのcache entryを作った呼出しは直接traceしていません。VSとPSは実holderのstageで区別し、runtime indexと保存variant番号の一致だけをidentityの根拠にしません。他family、全候補、同一原作frameのViewer RGB一致は別の未確定事項です。
+
+null入力を空集合で補完せず、重複・不正token・上限超過を拒否します。入力の並べ替えと複製により、後から呼出し側の配列が変更されても結果を保持します。Unityの選択規則を実装するAPIではなく、通常rendererの登録・keyword writer・pass選択は変更しません。
+
+最終ソースの公開人工監査は **137/137 PASS**。従来のD3D11人工描画による **64/64画素RGBA一致** と、新しい集合の差・複製保持・拒否条件を確認しました。私有sourceのない公開Control結合も **376/376 PASS**。今回は原作RGB replayと142秒のViewer自然再生は再実行しておらず、過去の成功と合算しません。正常停止・復元と対象採取の成立を分け、途中runのPending・対象0件・未完了joinも保持しています。
+
 ## 実pass引数とCommandBuffer keyword順序
 
 限定原作観測の7 drawについて、実行時pass引数を同一run・更新・一意なqueue範囲のGPU drawへ結びました。混合段は従来の候補passと一致しました。標準書戻しは全pass指定であり、実引数をliteralなpass zeroへ読み替えません。別の限定観測では、混合drawのpassと18 keywordの入力状態を同じconsumerへ結びました。保存assetの宣言keyword集合とは完全一致しないため、実program選択とkeyword未指定時の処理は分けて判定します。

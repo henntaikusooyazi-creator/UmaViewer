@@ -14,6 +14,16 @@ MODE／blendの変更はCommandBufferのglobal命令です。material側のlocal
 
 最終runでは混合drawのPSを限定し、全bytecode一致による生成object、保持reference、生成時刻がdrawより前であること、GPUの実PS objectを照合しました。同じdrawの実passにより、保存asset内のPS aliasも一意になりました。実keyword入力と宣言keyword集合の差はそのまま残ります。内部のfallback選択分岐そのもの、最後のcopy shader identity、全variantのproducer契約は未確定です。
 
+## programのkeyword集合を分ける監査
+
+`OriginalPostFilmRouteAudit.CompareProgramKeywords(effective, lookupKey, selectedProgramKey, declaration)` は、明示された4集合の隣接する差と一致判定を返すEditor専用APIです。runtime検索キーと選択候補のキーを別々に扱うため、選択候補の宣言にだけ存在するkeywordを、実際の有効bitへ昇格させません。program identity、同一更新、cacheのhit／miss、選択分岐の証明は別途必要です。
+
+限定原作観測では、同じ混合drawの検索cache、選択programとholder、GPUで消費したPS、全bytecode一致した生成objectを対応付けました。検索側にないkeywordを含む候補が選ばれており、資格化したmiss時の近似検索と同点先頭優先の評価結果にも一致します。これはkeyword setterがそのbitを有効にした証明ではありません。実際のcache hit／miss分岐と過去のcache生成呼出しは未traceのままです。
+
+空集合を渡す場合も呼出し側の明示入力が必要です。欠落入力、重複、不正token、上限超過は拒否し、取得した集合を複製して保持します。原作の内部layout、保存値、候補bytecode、選択式を公開実装へ含めず、通常rendererと従来のroute監査を維持しています。検証は既存の `OriginalPostFilmRouteAuditValidation.Run` で実行します。
+
+最終ソースで **137/137 PASS**、D3D11人工描画の **64/64画素RGBA一致**、公開Control結合 **376/376 PASS** を確認しました。原作RGB replayや142秒の自然previewの再実行ではありません。追加の原作採取は、正常停止と観測成立を別判定で保存し、途中のPendingや不成立を最終runの成功へ置き換えていません。全false／Unknown gateを維持します。
+
 ## 評価済みFilmのcode route監査
 
 Editor専用の `OriginalPostFilmRouteAudit.Capture(evaluatedFilm, basePass)` は、評価済み `PostFilmUpdateInfo` と呼出し側が資格化したbase passを受け取ります。現在の `ScreenOverlayRender.Parameter.IsValidity` とkeyword配列を読み、有効なFilmのpass加算とMODE設定／解除、通常color layerで解除されるblend keywordを返します。keyword配列のslot zeroが保持される動作も変更しません。無効FilmはFilm描画なしとして返し、別のdefault／copy経路を補完しません。

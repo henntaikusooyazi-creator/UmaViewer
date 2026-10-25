@@ -86,4 +86,48 @@ public static class OriginalPostFilmRouteAudit
         return new GlobalTransition { route = route, before = before,
             after = keywords.OrderBy(k => k, StringComparer.Ordinal).ToArray() };
     }
+
+    [Serializable] public sealed class ProgramKeywordComparison
+    {
+        public string scope = "ExplicitKeywordSetsOnly; program identity and update join require separate evidence";
+        public string[] effective, lookupKey, selectedKey, declaration;
+        public string[] effectiveOnly, lookupOnly, lookupUnselected, selectedUnrequested, declarationOnly, selectedUndeclared;
+        public bool effectiveMatchesLookupKey, lookupKeyMatchesSelectedProgram, selectedProgramMatchesDeclaration;
+        public bool runtime_contract = false, OriginalVerified = false;
+    }
+
+    static string[] SnapshotKeywordSet(IEnumerable<string> source, string parameter)
+    {
+        if (source == null) throw new ArgumentNullException(parameter);
+        var set = new HashSet<string>(StringComparer.Ordinal); int count = 0;
+        foreach (var keyword in source)
+        {
+            if (++count > 256 || string.IsNullOrWhiteSpace(keyword) || keyword.Length > 128 ||
+                keyword.Any(char.IsWhiteSpace) || !set.Add(keyword))
+                throw new ArgumentException("A bounded, unique explicit keyword set is required.", parameter);
+        }
+        return set.OrderBy(k => k, StringComparer.Ordinal).ToArray();
+    }
+
+    // Effective bits, the lookup key, selected candidate key and declaration
+    // are independent surfaces. The caller must qualify the same program/update.
+    // This compares explicit observations without selecting a Unity variant.
+    public static ProgramKeywordComparison CompareProgramKeywords(IEnumerable<string> effectiveKeywords,
+        IEnumerable<string> runtimeLookupKey, IEnumerable<string> selectedProgramKey, IEnumerable<string> declaredKeywords)
+    {
+        var effective = SnapshotKeywordSet(effectiveKeywords, nameof(effectiveKeywords));
+        var lookup = SnapshotKeywordSet(runtimeLookupKey, nameof(runtimeLookupKey));
+        var selected = SnapshotKeywordSet(selectedProgramKey, nameof(selectedProgramKey));
+        var declaration = SnapshotKeywordSet(declaredKeywords, nameof(declaredKeywords));
+        return new ProgramKeywordComparison { effective = effective, lookupKey = lookup, selectedKey = selected, declaration = declaration,
+            effectiveOnly = effective.Except(lookup, StringComparer.Ordinal).ToArray(),
+            lookupOnly = lookup.Except(effective, StringComparer.Ordinal).ToArray(),
+            lookupUnselected = lookup.Except(selected, StringComparer.Ordinal).ToArray(),
+            selectedUnrequested = selected.Except(lookup, StringComparer.Ordinal).ToArray(),
+            declarationOnly = declaration.Except(selected, StringComparer.Ordinal).ToArray(),
+            selectedUndeclared = selected.Except(declaration, StringComparer.Ordinal).ToArray(),
+            effectiveMatchesLookupKey = effective.SequenceEqual(lookup),
+            lookupKeyMatchesSelectedProgram = lookup.SequenceEqual(selected),
+            selectedProgramMatchesDeclaration = selected.SequenceEqual(declaration) };
+    }
 }
