@@ -2,6 +2,30 @@
 
 検証ブランチの限定結果です。通常ライブへの自動採用、原作同一frameの全画面一致、時刻契約の成立を認定するものではありません。
 
+## 実時刻戻り値とmaskの実行入力（2026-10-26）
+
+原作の現在の再生で使用されたfloat時刻getterの実戻り値を取得し、同じ音声実体、playback識別子、import参照、owner、thread、Unity frameに属する3更新を結びました。戻り値・前後のsource値・MusicTimeはfloat32 bit一致し、時刻controllerからDirector、Control owner、現在／前回の整数比較値への対応も成立しました。import参照は同一性の文脈として保持しています。この分岐の戻り値をCRI GetTimeの整数戻り値とは扱いません。CRI経路を観測できなかった先行runは、そのまま未達として保持します。
+
+別のmask runでは、右targetの実vertex／index、POSITION／UV宣言、viewport、現在boundされたVSの3定数範囲を取得しました。保存VS演算との照合では、4頂点の投影とunit screen UVの関係が整合しています。実行時に取得した行列はconstructorの証明ではなく、当該drawのVS objectから生成bytecodeへの同一性も未確定です。
+
+右maskの現在mappingを既存coverage generatorへ与えた限定比較は、Built-in／URP14とも**48/48 alpha完全一致**。同じ原作frameのFinalCompositeが消費したM、直前のD、直後のOを同じ整数画素位置から保存し、その入力を既存合成器へ再供給した比較も、両pipelineで**48/48画素RGBA一致**でした。両pipelineは同じ原作観測の再評価であり、独立した96画素観測には加算しません。maskを保存した同じframeには、安定したowner値の観測2件もあります。音声getterを取得した別runとは結合していません。
+
+これは原作の同一draw入力を用いる限定replayです。自然Viewer cameraのRGB生成、原作とViewerの音声epoch、同一frameの全面一致、自然TextureMappingの上流producer、projection constructorは引き続き未成立です。48画素のmask alphaは境界外／内の確認であり、今回新たにfade中間値や境界精度の観測を増やした結果ではありません。
+
+公開の `OriginalMaskExecutionValidation` は、明示座標、評価済みmapping、前後alpha、対応するM／D／OのRGBAを受け取るEditor検証器です。座標の重複・範囲外・欠落・不正値をGPU資源の確保前に拒否し、人工部分13チェックと外部入力比較8チェックの合計21チェックを確認しました。通常runtime、coverage shader、camera選択、clockの更新順は維持しています。
+
+実行例は `Invoke-IntegrationValidation.ps1 -UnityExecutable $UnityExecutable -OutputPath $ExternalOutput -MaskExecutionOnly` です。私有入力を比較する場合だけ `-ObservedMaskExecution $PrivateInput` を追加します。入力と出力はrepository外に置き、原作bytesや採取値は公開しません。
+
+検証器の初回入力抽出では、fadeを未使用のcommand成分から読んで比較が失敗しました。実PSの消費成分へ修正し、異なるcanary値を持つ回帰fixtureを追加しました。初回失敗・旧入力を保存し、別出力で再検証しています。shaderへ補正値は追加していません。
+
+### 中央Dの保存writerの限定帰属
+
+追加runでは、同じ実Unity frameの右・左・中央Resolveについて、それぞれ保存された先行writer4件を一意なrender-taskのqueue／論理範囲へ結びました。中央DがFinalCompositeの直前入力であることは、対象resource版と実draw frameを照合しています。中央の4件はいずれも同じtask／cameraに対応します。共有MSAA resourceの同一性だけで、別versionのcameraを流用していません。
+
+中央のうち1件はtask完了後、3件はproducerとconsumerの実行が重なる期間のwriterです。後者もtask全体はResolveより前に完了しており、保存cursorが同じqueueの一意な完了範囲に入ることを確認しました。旧照合器の64KiB制限と「task完了後のみ」の判定結果は保存し、別のqueue範囲監査で評価しています。論理spanの上限、範囲外、未完了、異なるqueue、重複候補の拒否を含む26件の人工試験を通しました。nativeの読取り上限や元のrun結果は変更していません。
+
+これは各Resolveに保存された4writerの限定帰属です。中央Dへの全writer閉包、camera映像のRGB一致、Viewerとの音声epoch、projection constructorの証明には拡張しません。先行runの読取り不足やPending判定も保持します。
+
 ## Filmの再生成
 
 | 対象 | 入力の対応 | 再生成・比較 |
@@ -28,6 +52,8 @@
 後述のmask runの時刻snapshotは安定性条件を満たさず、全件を対応付けから除外しました。正常停止したrunでも、各入力の資格化は独立に判定します。先の時刻成功を別runのmaskへ流用していません。
 
 ## mask・projection・camera
+
+以下は実行入力の追加採取前の記録です。右IAとVS定数の最新結果は上記の追記を参照してください。
 
 typed receiverから描画callbackを特定し、連続するunwind断片を限定読取りしました。直接参照されるBlit経路ではUV scale／offsetの引数生成を確認しました。直接calleeは `StaticOnly` で、新しい同一drawのcommand traceやshader identityの証明ではありません。
 

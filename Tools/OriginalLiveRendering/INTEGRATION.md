@@ -1,5 +1,13 @@
 # 実Controlによる独立結合検証
 
+## 音声実戻り値と限定mask／合成replay（2026-10-26）
+
+原作で実際に使用されたfloat時刻getterから、同じ更新のMusicTime・Director・Control owner・整数比較値まで3件を結びました。別runの右maskでは実IAとbound VS定数を取得し、現在mappingによるalpha48/48、同じ原作frameのM／D／O再供給によるRGBA48/48をBuilt-in／URP14で確認しています。両pipelineは同じ観測の再評価です。
+
+追加したEditor検証器は [OriginalMaskExecutionValidation](../../Assets/Editor/OriginalMaskExecutionValidation.cs) です。公開人工部分13件、外部入力比較8件の計21チェックを確認しました。自然camera RGB・音声epoch・原作対Viewerの同一frame全画面一致は未成立です。[入力と証拠の境界](NATURAL_INPUT_JOIN.md#実時刻戻り値とmaskの実行入力2026-10-26) を参照してください。既存Control376件と142秒自然再生の過去受入は今回の件数に加算しません。
+
+中央Dの追加採取では、同じ実frameの右・左・中央Resolveそれぞれの保存writer4件を、一意なrender-task／cameraへ限定帰属できました。中央のproducer／consumerが重なる3件も、完了taskのqueue論理範囲から判定しています。全writer閉包や原作対ViewerのRGB一致とは区別します。詳細は[中央Dの保存writerの限定帰属](NATURAL_INPUT_JOIN.md#中央dの保存writerの限定帰属)に記録しています。
+
 ## CPU Filmとowner値の限定接続（2026-10-26）
 
 通常Addでは原作owner値を実Controlへ明示供給し、補間後FilmとCPU producerの消費24成分、限定128画素のRGBA一致を確認しました。inverse VignetteAddは既存観測の消費17成分でlayerの値の対応を一意化し、CPU Filmによる128画素比較を再実行しました。inverseの未採取owner値は補完していません。
