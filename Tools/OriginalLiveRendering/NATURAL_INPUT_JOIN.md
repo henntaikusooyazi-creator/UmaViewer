@@ -16,6 +16,18 @@ Directorの未登録経路は従来のdeltaTime加算です。登録時には現
 
 原作のfloat getterとViewer音声の時刻原点、原作側の音声終了後の時計生成、同一原作frameの自然RGBは引き続き未成立です。既存の原作3更新の結合や48位置の保存入力replayを、今回の自然描画件数へ合算しません。
 
+### 実消費した音声時刻からの平滑化と明示owner評価
+
+後続の限定採取では、実getterの戻り値とその直前の時計stateを、同じthread・実Unity frame・音声実体・playback・ownerに属する更新後のMusicTime、平滑化state、Director、Control ownerへ結びました。getter前後のsource値と実戻り値のbit一致を確認し、確認済み演算順から再計算した消費成分もfloat32 bit一致しました。描画parameter時点のcached値をgetter戻り値と同一視せず、固定のframe差や補正秒数は追加していません。
+
+公開の `OriginalLiveClockMath` は通常の音声消費分岐を、明示した前stateとParametersから評価します。reference step、dead zone、補正上限、reset距離、時刻上限、smoothing有効状態をcallerが供給します。原作の定数・native layout・初期stateは埋め込まず、不正値と非有限な中間値は拒否します。初期化、pause、seek、sourceの切替や各設定の自然producerを自動生成するAPIではありません。
+
+`OriginalLiveAudioClock` の4引数constructorへ `Func<Sample, float?>` を明示すると、現在の音声snapshotから評価したowner時刻をDirectorへ渡せます。Observationは `SourceTime` と `OwnerTime` を別に保持し、実Controlとのbit照合にはOwnerTimeを使用します。既存3引数constructorは現在音声を直接渡す従来経路です。評価不能・不正値・評価中の破棄・clip変更ではpendingを発行しません。callbackの外部state変更はrollbackせず、初期state、source／clipごとのlifetime、resetはcallerの責任です。
+
+公開人工Control／GPU検証は **456/456 PASS**（従来410＋追加46、Built-in／URP14）。明示平滑化、補正の上限、reset、不正入力、raw値と異なるownerのControl結合、評価中の登録解除・clip破棄を確認しました。原作の同じ保存入力を公開C#算術へ渡す限定replayもbit一致しています。初回compileで同namespaceのMath型との名前衝突を検出し、`System.Math` の明示参照へ修正しました。
+
+今回のgetter採取templateにはGPU draw frameの保存欄がなく、ownerとGPU drawの同一frame対応は未認定です。中央Dの履歴を別runから流用していません。今回142秒自然再生やRGB replayは再実行しておらず、新しいowner評価経路の自然連続供給、原作とViewerの音声epoch、同一frameの最終RGBは未成立です。
+
 ## 実時刻戻り値とmaskの実行入力（2026-10-26）
 
 原作の現在の再生で使用されたfloat時刻getterの実戻り値を取得し、同じ音声実体、playback識別子、import参照、owner、thread、Unity frameに属する3更新を結びました。戻り値・前後のsource値・MusicTimeはfloat32 bit一致し、時刻controllerからDirector、Control owner、現在／前回の整数比較値への対応も成立しました。import参照は同一性の文脈として保持しています。この分岐の戻り値をCRI GetTimeの整数戻り値とは扱いません。CRI経路を観測できなかった先行runは、そのまま未達として保持します。

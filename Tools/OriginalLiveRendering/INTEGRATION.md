@@ -10,6 +10,8 @@
 
 ## 音声実戻り値と限定mask／合成replay（2026-10-26）
 
+実getter直前のstateから平滑化後のownerまで、同じ原作更新での限定bit一致を確認しました。`OriginalLiveClockMath` と、raw音声時刻／評価後ownerを分離する `OriginalLiveAudioClock` の明示overloadを追加しています。最終の公開人工Control／GPU検証は456/456 PASS。旧3引数経路を維持し、初期化・source lifetime・原作とのepochは自動確定しません。[算術と評価callbackの受入範囲](NATURAL_INPUT_JOIN.md#実消費した音声時刻からの平滑化と明示owner評価)を参照してください。新経路による142秒自然再生と原作同一frame RGBは今回は未検証です。
+
 後続の限定採取では、中央Dの保持リングを越える有界履歴から、対象版の観測済み描画writerを同じ一意なrender-task／cameraへ結びました。先行Clearの帰属と未hook APIは未確定です。D3Dの13参照は起動時／採取終了後の両方で現在moduleと照合できましたが、同じcontextでも一部が変化しており、静的候補の流用はできません。描画時点のcached音声と時計更新時のMusicTimeも分けて保存し、同一値として接続しません。[履歴・参照・時刻の境界](NATURAL_INPUT_JOIN.md#保持リングを越えた中央d履歴と現在d3d参照2026-10-26)を参照してください。新しいRGB比較、Viewer音声epoch、全writer閉包の成立は主張しません。
 
 原作で実際に使用されたfloat時刻getterから、同じ更新のMusicTime・Director・Control owner・整数比較値まで3件を結びました。別runの右maskでは実IAとbound VS定数を取得し、現在mappingによるalpha48/48、同じ原作frameのM／D／O再供給によるRGBA48/48をBuilt-in／URP14で確認しています。両pipelineは同じ観測の再評価です。

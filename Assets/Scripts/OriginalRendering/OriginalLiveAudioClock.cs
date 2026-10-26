@@ -8,29 +8,43 @@ namespace Gallop.Live.Rendering
     // This registration does not establish an original-game audio epoch.
     public sealed class OriginalLiveAudioClock : IDisposable
     {
+        public readonly struct Sample
+        {
+            public readonly AudioSource Source;
+            public readonly AudioClip Clip;
+            public readonly float SourceTime;
+            public readonly int SampledUnityFrame, AudioSamples;
+            internal Sample(Pending sample)
+            { Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time;
+              SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples; }
+        }
         public readonly struct Observation
         {
             public readonly OriginalLiveTimelineBridge.Frame Selected;
             public readonly AudioSource Source;
             public readonly AudioClip Clip;
             public readonly int SampledUnityFrame, AudioSamples;
-            public readonly float SourceTime;
+            public readonly float SourceTime, OwnerTime;
             internal Observation(OriginalLiveTimelineBridge.Frame selected, Pending sample)
-            { Selected = selected; Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time;
+            { Selected = selected; Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time; OwnerTime = sample.OwnerTime;
               SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples; }
         }
         internal readonly struct Pending
         {
             internal readonly AudioSource Source;
             internal readonly AudioClip Clip;
-            internal readonly float Time;
+            internal readonly float Time, OwnerTime;
             internal readonly int UnityFrame, Samples;
             internal Pending(AudioSource source, AudioClip clip, float time, int samples)
-            { Source = source; Clip = clip; Time = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount; }
+            { Source = source; Clip = clip; Time = OwnerTime = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount; }
+            internal Pending(Pending sample, float ownerTime)
+            { Source = sample.Source; Clip = sample.Clip; Time = sample.Time; OwnerTime = ownerTime;
+              Samples = sample.Samples; UnityFrame = sample.UnityFrame; }
         }
         readonly Director director;
         readonly OriginalLiveContinuousProvider provider;
         readonly Func<AudioSource> source;
+        readonly Func<Sample, float?> ownerTime;
         readonly Func<float?> read;
         Pending? pending;
         bool disposed;
@@ -42,13 +56,19 @@ namespace Gallop.Live.Rendering
         public Observation? LastObservation { get; private set; }
 
         public OriginalLiveAudioClock(Director director, OriginalLiveContinuousProvider provider, Func<AudioSource> source)
+            : this(director, provider, source, null) { }
+
+        // Optional evaluation keeps raw source time distinct from the owner time.
+        // The caller supplies and owns any smoothing state and its lifetime.
+        public OriginalLiveAudioClock(Director director, OriginalLiveContinuousProvider provider, Func<AudioSource> source,
+            Func<Sample, float?> ownerTime)
         {
             if (!director || provider == null || source == null || !director._liveTimelineControl ||
                 !ReferenceEquals(director._liveTimelineControl.OriginalCompositeBridge, provider.Bridge))
                 throw new ArgumentException("The registered Director, provider and explicit audio resolver must belong together.");
             if (director.OriginalLiveTimeProvider != null)
                 throw new InvalidOperationException("An existing time provider remains owned by its registration.");
-            this.director = director; this.provider = provider; this.source = source;
+            this.director = director; this.provider = provider; this.source = source; this.ownerTime = ownerTime;
             read = Read; director.OriginalLiveTimeProvider = read; provider.FrameReady += OnFrame;
         }
         float? Read()
@@ -62,8 +82,22 @@ namespace Gallop.Live.Rendering
             if (float.IsNaN(time) || float.IsInfinity(time) || time < 0)
             { HeldReads++; return null; }
             // timeSamples is observed metadata; it is never converted into time.
-            pending = new Pending(current, clip, time, current.timeSamples); ReadCount++;
+            var sample = new Pending(current, clip, time, current.timeSamples);
+            if (ownerTime != null) return Resolve(sample);
+            pending = sample; ReadCount++;
             return time;
+        }
+        float? Resolve(Pending sample)
+        {
+            pending = null;
+            if (disposed) return null;
+            float? evaluated = ownerTime(new Sample(sample));
+            if (disposed) return null;
+            if (!evaluated.HasValue || float.IsNaN(evaluated.Value) || float.IsInfinity(evaluated.Value) || evaluated.Value < 0 ||
+                sample.UnityFrame != Time.frameCount || !sample.Source || !sample.Clip || sample.Source.clip != sample.Clip)
+            { HeldReads++; return null; }
+            pending = new Pending(sample, evaluated.Value); ReadCount++;
+            return evaluated;
         }
         static bool SameBits(float a, float b) => BitConverter.ToInt32(BitConverter.GetBytes(a), 0) == BitConverter.ToInt32(BitConverter.GetBytes(b), 0);
         void OnFrame(OriginalLiveContinuousProvider.Frame frame)
@@ -74,7 +108,7 @@ namespace Gallop.Live.Rendering
             if (p.UnityFrame != Time.frameCount || !p.Source || p.Source.clip != p.Clip || frame.Selected.Selections.Count == 0)
             { RejectedFrames++; return; }
             foreach (var selected in frame.Selected.Selections)
-                if (!selected.ComparisonClock.HasValue || !SameBits(selected.ComparisonClock.Value.CurrentOwnerTime, p.Time))
+                if (!selected.ComparisonClock.HasValue || !SameBits(selected.ComparisonClock.Value.CurrentOwnerTime, p.OwnerTime))
                 { RejectedFrames++; return; }
             LastObservation = new Observation(frame.Selected, p); JoinedFrames++;
         }

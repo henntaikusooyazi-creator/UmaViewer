@@ -297,6 +297,71 @@ public static class OriginalLiveContinuousValidation
                 director.OriginalLiveTimeProvider = foreign; audioClock.Dispose();
                 Check(ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Audio disposal preserves a replacement provider.");
                 director.OriginalLiveTimeProvider = null;
+
+                var limits = new OriginalLiveClockMath.Parameters(true, .02f, .001f, .002f, .1f, 100f);
+                var clockState = new OriginalLiveClockMath.State(1, 1, 0, 1);
+                Check(OriginalLiveClockMath.TryEvaluate(1.06f, clockState, limits, out var calculated) && calculated.Smoothed &&
+                    calculated.Next.CurrentTime != calculated.SourceTime && calculated.Next.Correction == .002f,
+                    "Explicit smoothing retains a distinct source value and bounded correction.");
+                Check(calculated.PreviousTime == 1 && calculated.DeltaTime == calculated.Next.CurrentTime - 1 &&
+                    clockState.CurrentTime == 1, "Clock calculation preserves its input state and explicit previous time.");
+                Check(OriginalLiveClockMath.TryEvaluate(5, calculated.Next, limits, out var reset) && !reset.Smoothed &&
+                    reset.Next.CurrentTime == 5 && reset.Next.Correction == 0, "Large discontinuity resets through explicit distance policy.");
+                var disabled = new OriginalLiveClockMath.Parameters(false, .02f, .001f, .002f, .1f, 100);
+                Check(OriginalLiveClockMath.TryEvaluate(1.06f, clockState, disabled, out reset) && !reset.Smoothed &&
+                    reset.Next.CurrentTime == 1.06f, "Explicit disabled smoothing keeps source time.");
+                foreach (float sample in new[] { -1f, 101f })
+                    Check(OriginalLiveClockMath.TryEvaluate(sample, clockState, limits, out reset) &&
+                        reset.Next.CurrentTime == (sample < 0 ? 0 : 100), "Current clock clamps while retaining the source value.");
+                foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+                    Check(!OriginalLiveClockMath.TryEvaluate(invalid, clockState, limits, out reset), "Nonfinite source cannot produce a clock state.");
+                Check(!OriginalLiveClockMath.TryEvaluate(1, clockState, default, out reset), "Missing explicit clock limits are rejected.");
+                var saturated = new OriginalLiveClockMath.State(1, 1, .003f, 1);
+                Check(OriginalLiveClockMath.TryEvaluate(1.06f, saturated, limits, out reset) &&
+                    reset.Next.Correction == .003f && reset.Next.CurrentTime == 1.06f, "Saturated positive correction is not accumulated again.");
+                saturated = new OriginalLiveClockMath.State(1, 1, -.003f, 1);
+                Check(OriginalLiveClockMath.TryEvaluate(1, saturated, limits, out reset) && reset.Next.Correction == -.003f,
+                    "Saturated negative correction remains bounded by the observed branch.");
+
+                var audio = Go("Artificial clock source").AddComponent<AudioSource>();
+                audio.clip = Own(AudioClip.Create("Artificial clock clip", 1024, 1, 8000, false));
+                var pendingType = typeof(OriginalLiveAudioClock).GetNestedType("Pending", BindingFlags.NonPublic);
+                var resolve = typeof(OriginalLiveAudioClock).GetMethod("Resolve", BindingFlags.Instance | BindingFlags.NonPublic);
+                object Snapshot(float time) => Activator.CreateInstance(pendingType, BindingFlags.Instance | BindingFlags.NonPublic,
+                    null, new object[] { audio, audio.clip, time, 17 }, null);
+                using (var evaluatedClock = new OriginalLiveAudioClock(director, clockProvider, () => audio, sample =>
+                {
+                    Check(sample.Source == audio && sample.Clip == audio.clip && sample.AudioSamples == 17 &&
+                        sample.SampledUnityFrame == Time.frameCount, "Evaluator receives one current source/clip/frame snapshot.");
+                    return OriginalLiveClockMath.TryEvaluate(sample.SourceTime, clockState, limits, out var next)
+                        ? next.Next.CurrentTime : (float?)null;
+                }))
+                {
+                    float owner = (float)resolve.Invoke(evaluatedClock, new[] { Snapshot(1.06f) });
+                    control.AlterUpdate(owner); control.AlterLateUpdate();
+                    var observed = evaluatedClock.LastObservation.Value;
+                    Check(evaluatedClock.JoinedFrames == 1 && observed.SourceTime == 1.06f && observed.OwnerTime == owner &&
+                        observed.SourceTime != observed.OwnerTime, "Actual Control joins evaluated owner while preserving raw source time.");
+                    resolve.Invoke(evaluatedClock, new[] { Snapshot(1.06f) });
+                    audio.clip = Own(AudioClip.Create("Replacement artificial clip", 1024, 1, 8000, false));
+                    control.AlterUpdate(owner); control.AlterLateUpdate();
+                    Check(evaluatedClock.RejectedFrames == 1 && !evaluatedClock.LastObservation.HasValue,
+                        "Changing clip after evaluation rejects the pending correspondence.");
+                }
+                Check(director.OriginalLiveTimeProvider == null, "Evaluated clock releases its registration.");
+                foreach (float? invalid in new float?[] { null, -1, float.NaN, float.PositiveInfinity })
+                    using (var evaluatedClock = new OriginalLiveAudioClock(director, clockProvider, () => audio, sample => invalid))
+                        Check(resolve.Invoke(evaluatedClock, new[] { Snapshot(1) }) == null && evaluatedClock.HeldReads == 1 &&
+                            evaluatedClock.ReadCount == 0, "Unresolved or invalid owner time does not publish a pending sample.");
+                OriginalLiveAudioClock disposingClock = null;
+                disposingClock = new OriginalLiveAudioClock(director, clockProvider, () => audio,
+                    sample => { disposingClock.Dispose(); return 1; });
+                Check(resolve.Invoke(disposingClock, new[] { Snapshot(1) }) == null && disposingClock.ReadCount == 0 &&
+                    director.OriginalLiveTimeProvider == null, "Disposal during evaluation cannot publish a later pending sample.");
+                using (var destroyingClock = new OriginalLiveAudioClock(director, clockProvider, () => audio,
+                    sample => { Object.DestroyImmediate(sample.Clip); return 1; }))
+                    Check(resolve.Invoke(destroyingClock, new[] { Snapshot(1) }) == null && destroyingClock.HeldReads == 1,
+                        "A clip destroyed during evaluation cannot publish a pending correspondence.");
             }
             var character = Go("Synthetic explicit physics opt out").AddComponent<UmaContainerCharacter>();
             Check(character.InitializeNativePhysicsOnLoad, "Existing physics initialization remains the default.");
