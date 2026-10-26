@@ -40,6 +40,7 @@ public static class OriginalLivePlaybackValidation
     static OriginalLiveChannelEvidence channelEvidence;
     static OriginalNaturalPostProcessProbe frameInputs;
     static OriginalLiveAudioClock audioClock;
+    static OriginalLiveSmoothingClock smoothingClock;
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -77,6 +78,15 @@ public static class OriginalLivePlaybackValidation
         SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
         SessionState.SetBool(Active + ".FrameInputs", Argument("-liveFrameInputs") == "true");
         SessionState.SetBool(Active + ".AudioClock", Argument("-liveAudioClock") == "true");
+        string checkpoint = Argument("-liveClockCheckpoint");
+        if (checkpoint != null)
+        {
+            checkpoint = Path.GetFullPath(checkpoint);
+            if (Argument("-liveAudioClock") != "true" || checkpoint == repo ||
+                checkpoint.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                new FileInfo(checkpoint).Length > 65536) throw new ArgumentException("Bounded external clock checkpoint requires the audio clock.");
+        }
+        SessionState.SetString(Active + ".ClockCheckpoint", checkpoint ?? "");
         SessionState.SetBool(Active + ".AudioTail", Argument("-liveAudioClockTailToExistingDirector") == "true");
         SessionState.SetInt(Active + ".MaximumWallSeconds", timeout);
         EditorApplication.playModeStateChanged += State;
@@ -182,9 +192,28 @@ public static class OriginalLivePlaybackValidation
         }
         if (SessionState.GetBool(Active + ".AudioClock", false))
         {
-            audioClock = new OriginalLiveAudioClock(director, provider, () =>
-                director && director.liveMusic?.sourceList != null && director.liveMusic.sourceList.Count > 0 ? director.liveMusic.sourceList[0] : null);
+            string checkpointPath = SessionState.GetString(Active + ".ClockCheckpoint", "");
+            if (string.IsNullOrEmpty(checkpointPath))
+                audioClock = new OriginalLiveAudioClock(director, provider, () =>
+                    director && director.liveMusic?.sourceList != null && director.liveMusic.sourceList.Count > 0 ? director.liveMusic.sourceList[0] : null);
+            else
+            {
+                var checkpoint = JsonUtility.FromJson<ClockCheckpoint>(File.ReadAllText(checkpointPath));
+                if (checkpoint == null || checkpoint.schema != "ExplicitClockCheckpoint-v1" || checkpoint.state == null ||
+                    checkpoint.state.Length != 4 || checkpoint.parameters == null || checkpoint.parameters.Length != 5 ||
+                    (checkpoint.smoothing != "Enabled" && checkpoint.smoothing != "Disabled"))
+                    throw new ArgumentException("All checkpoint components and an explicit smoothing policy are required.");
+                var s = checkpoint.state; var pClock = checkpoint.parameters;
+                smoothingClock = new OriginalLiveSmoothingClock(director, provider,
+                    () => director && director.liveMusic?.sourceList != null ? director.liveMusic.sourceList.FirstOrDefault() : null,
+                    new OriginalLiveClockMath.State(s[0], s[1], s[2], s[3]),
+                    new OriginalLiveClockMath.Parameters(checkpoint.smoothing == "Enabled", pClock[0], pClock[1], pClock[2], pClock[3], pClock[4]));
+                audioClock = smoothingClock.Clock;
+                result.smoothingRequested = true;
+                result.clockCheckpoint = "ExplicitCallerCheckpoint_NotOriginalEpoch";
+            }
             result.audioClockRequested = true; result.clockSource = "ExplicitCurrentViewerAudioTime";
+            if (smoothingClock != null) result.clockSource = "ExplicitConsumedAudioMath_CommitAfterOwnerJoin";
             result.audioClockTailPolicy = SessionState.GetBool(Active + ".AudioTail", false) ? "ReleaseToExistingDirectorAtSourceStop" : "Hold";
         }
         provider.FrameReady += Observe;
@@ -207,15 +236,19 @@ public static class OriginalLivePlaybackValidation
         {
             result.audioClockReads = audioClock.ReadCount; result.audioClockJoined = audioClock.JoinedFrames;
             result.audioClockHeld = audioClock.HeldReads; result.audioClockRejected = audioClock.RejectedFrames;
+            UpdateSmoothingEvidence();
             if (audioClock.LastObservation.HasValue)
             {
                 var observed = audioClock.LastObservation.Value;
                 result.audioClipLength = observed.Clip.length; result.audioSourcePitch = observed.Source.pitch;
                 if (!ReferenceEquals(observed.Selected, frame.Selected) || observed.SampledUnityFrame != Time.frameCount ||
                     preview.LastStatus != "RenderedContinuousViewerCameras") result.audioClockFailures++;
+                if (smoothingClock != null && (smoothingClock.CommittedFrames != audioClock.JoinedFrames ||
+                    smoothingClock.CommittedState.PreviousSourceTime != observed.SourceTime ||
+                    smoothingClock.CommittedState.CurrentTime != observed.OwnerTime)) result.audioClockFailures++;
                 if (result.audioClockSamples.Count < 192 && (result.audioClockSamples.Count == 0 || frame.Selected.Serial % 60 == 0))
                     result.audioClockSamples.Add(new AudioClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
-                        sourceTime = observed.SourceTime, audioSamples = observed.AudioSamples, clipFrequency = observed.Clip.frequency,
+                        sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime, audioSamples = observed.AudioSamples, clipFrequency = observed.Clip.frequency,
                         sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(), renderedCount = preview.RenderCount });
             }
         }
@@ -347,6 +380,7 @@ public static class OriginalLivePlaybackValidation
                     result.tailStartOwnerTime = director._liveCurrentTime;
                     // Explicit test policy only: end this registration. The
                     // existing Director clock then owns the remaining timeline.
+                    UpdateSmoothingEvidence(); smoothingClock?.Dispose(); smoothingClock = null;
                     audioClock.Dispose(); audioClock = null;
                     result.clockSource = "ViewerAudioWindowThenExistingDirectorTail_PreviewPolicy";
                 }
@@ -380,6 +414,8 @@ public static class OriginalLivePlaybackValidation
             pass &= frameInputs == null || frameInputs.Passed;
             pass &= !result.audioClockRequested || (result.audioClockJoined + result.legacyTailFrames == result.validOwnerFrames &&
                 result.audioClockRejected == 0 && result.audioClockFailures == 0 && result.audioClockReads > 100);
+            pass &= !result.smoothingRequested || (result.smoothingCommitted == result.audioClockJoined &&
+                result.smoothingDiscarded == 0 && result.smoothingHeld == 0);
             Finish(pass ? null : "Natural playback acceptance predicate failed");
         }
     }
@@ -390,6 +426,13 @@ public static class OriginalLivePlaybackValidation
         File.WriteAllText(Path.Combine(output, "samples.private.json"), JsonUtility.ToJson(new Samples { rows = samples.ToArray() }, true));
         frameInputs?.Save(output);
     }
+    static void UpdateSmoothingEvidence()
+    {
+        if (smoothingClock == null) return;
+        result.smoothingCommitted = smoothingClock.CommittedFrames;
+        result.smoothingDiscarded = smoothingClock.DiscardedCandidates;
+        result.smoothingHeld = smoothingClock.HeldEvaluations;
+    }
     static void Finish(string failure)
     {
         if (ending) return; ending = true;
@@ -398,6 +441,7 @@ public static class OriginalLivePlaybackValidation
         result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
         result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
         if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
+        UpdateSmoothingEvidence(); smoothingClock?.Dispose();
         channelEvidence?.Dispose(); frameInputs?.Dispose(); audioClock?.Dispose(); preview?.Dispose(); provider?.Dispose();
         if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
         Save(); Application.logMessageReceived -= Log;
@@ -406,7 +450,8 @@ public static class OriginalLivePlaybackValidation
     [Serializable] class Profile { public float fixedThickness, minimumThickness, angleDivisor, secondaryOrigin, secondaryScale, durationMultiplier; public float[] kindBases; }
     [Serializable] class Samples { public Sample[] rows; }
     [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
-    [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, sourceId, clipId, renderedCount; public float sourceTime; }
+    [Serializable] class ClockCheckpoint { public string schema, smoothing; public float[] state, parameters; }
+    [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, sourceId, clipId, renderedCount; public float sourceTime, ownerTime; }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;
@@ -422,6 +467,9 @@ public static class OriginalLivePlaybackValidation
         public bool channelEvidenceCollected;
         public bool audioClockRequested;
         public long audioClockReads, audioClockJoined, audioClockHeld, audioClockRejected;
+        public bool smoothingRequested;
+        public string clockCheckpoint;
+        public long smoothingCommitted, smoothingDiscarded, smoothingHeld;
         public int audioClockFailures;
         public float audioClipLength, audioSourcePitch;
         public string audioClockTailPolicy;

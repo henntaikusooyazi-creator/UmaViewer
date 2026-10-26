@@ -550,3 +550,7 @@ GPU試験のgeometry・key・TextureMappingは人工入力です。原作の保�
 私有引数を省略した公開試験は **248/248 PASS**。従来198＋人工の正duration入力50件で、summaryの `naturalFadeSource` を `SyntheticPositiveFadeInputs` とします。私有の自然観測を明示した場合は `ExplicitLocalNaturalKeyAndOwnerObservations` と区別します。zero durationの拒否例も確認しました。原作のkey・owner値、asset、native採取コード・receiptは公開repoへ含めません。
 
 `OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` を維持します。
+
+## 明示checkpointの採用と破棄
+
+任意の平滑化時計登録、source／clip lifetime、外部checkpoint形式と検証範囲は [AUDIO_CLOCK_CHECKPOINT.md](AUDIO_CLOCK_CHECKPOINT.md) を参照してください。既存の音声時計APIと未登録時のDirector時計は維持します。

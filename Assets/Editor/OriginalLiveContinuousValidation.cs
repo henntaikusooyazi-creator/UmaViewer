@@ -349,6 +349,83 @@ public static class OriginalLiveContinuousValidation
                         "Changing clip after evaluation rejects the pending correspondence.");
                 }
                 Check(director.OriginalLiveTimeProvider == null, "Evaluated clock releases its registration.");
+                var session = new OriginalLiveSmoothingClock(director, clockProvider, audio, clockState, limits);
+                float provisional = (float)resolve.Invoke(session.Clock, new[] { Snapshot(1.06f) });
+                Check(session.CommittedState.CurrentTime == clockState.CurrentTime && session.CommittedFrames == 0,
+                    "Smoothing evaluation alone never advances the checkpoint.");
+                control.AlterUpdate(provisional + .1f); control.AlterLateUpdate();
+                Check(session.CommittedState.CurrentTime == 1 && session.DiscardedCandidates == 1 && session.CommittedFrames == 0,
+                    "A mismatched actual owner discards the provisional state.");
+                resolve.Invoke(session.Clock, new[] { Snapshot(1.06f) });
+                provisional = (float)resolve.Invoke(session.Clock, new[] { Snapshot(1.07f) });
+                OriginalLiveClockMath.TryEvaluate(1.07f, clockState, limits, out var expectedCommit);
+                Check(provisional == expectedCommit.Next.CurrentTime && session.DiscardedCandidates == 2,
+                    "A missing Control update is discarded before recomputing from the committed checkpoint.");
+                control.AlterUpdate(provisional); control.AlterLateUpdate();
+                Check(session.CommittedFrames == 1 && session.CommittedState.PreviousSourceTime == 1.07f &&
+                    session.CommittedState.CurrentTime == provisional, "The joined Control update commits exactly once.");
+                control.AlterUpdate(provisional); control.AlterLateUpdate();
+                Check(session.CommittedFrames == 1, "A frame without a new audio sample cannot commit again.");
+                var committed = session.CommittedState;
+                audio.clip = Own(AudioClip.Create("Explicit reset clip", 1024, 1, 8000, false));
+                Check(resolve.Invoke(session.Clock, new[] { Snapshot(1.08f) }) == null && session.HeldEvaluations == 1 &&
+                    session.CommittedState.CurrentTime == committed.CurrentTime, "A changed clip holds without guessing its initial state.");
+                session.Reset(audio, clockState, limits);
+                provisional = (float)resolve.Invoke(session.Clock, new[] { Snapshot(1.06f) });
+                session.Reset(audio, committed, limits);
+                control.AlterUpdate(provisional); control.AlterLateUpdate();
+                Check(session.CommittedFrames == 1 && session.CommittedState.CurrentTime == committed.CurrentTime &&
+                    session.DiscardedCandidates == 3, "Explicit reset cancels an already evaluated candidate.");
+                rejected = false;
+                try { session.Reset(audio, clockState, default); } catch (ArgumentException) { rejected = true; }
+                Check(rejected && session.CommittedState.CurrentTime == committed.CurrentTime,
+                    "Invalid reset preserves the existing checkpoint.");
+                provisional = (float)resolve.Invoke(session.Clock, new[] { Snapshot(1.08f) });
+                director.OriginalLiveTimeProvider = foreign;
+                control.AlterUpdate(provisional); control.AlterLateUpdate();
+                Check(session.CommittedFrames == 1 && session.CommittedState.CurrentTime == committed.CurrentTime,
+                    "Replacing the time registration prevents a pending commit.");
+                Check(resolve.Invoke(session.Clock, new[] { Snapshot(1.09f) }) == null,
+                    "An unowned registration cannot evaluate another smoothing state.");
+                session.Dispose(); session.Dispose();
+                Check(ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Smoothing disposal preserves a replacement registration.");
+                rejected = false;
+                try { session.Reset(audio, clockState, limits); } catch (ObjectDisposedException) { rejected = true; }
+                Check(rejected, "Disposed smoothing cannot be reset into a new lifetime.");
+                director.OriginalLiveTimeProvider = null;
+                using (var replacementSession = new OriginalLiveSmoothingClock(director, clockProvider, audio, clockState, limits))
+                {
+                    resolve.Invoke(replacementSession.Clock, new[] { Snapshot(1.06f) });
+                    var otherSource = Go("Explicit replacement source").AddComponent<AudioSource>();
+                    otherSource.clip = audio.clip;
+                    replacementSession.Reset(otherSource, clockState, limits);
+                    Check(resolve.Invoke(replacementSession.Clock, new[] { Snapshot(1.07f) }) == null,
+                        "An explicitly replaced source rejects an old source even with the same clip.");
+                }
+                AudioSource lazySource = null;
+                using (var delayed = new OriginalLiveSmoothingClock(director, clockProvider, () => lazySource, clockState, limits))
+                {
+                    Check(!Advance(99) && delayed.Clock.HeldReads == 1 && delayed.CommittedFrames == 0,
+                        "A not-yet-loaded source holds the registered checkpoint without inventing time.");
+                    lazySource = audio;
+                    provisional = (float)resolve.Invoke(delayed.Clock, new[] { Snapshot(1.06f) });
+                    control.AlterUpdate(provisional); control.AlterLateUpdate();
+                    Check(delayed.CommittedFrames == 1, "The first valid source binds once after timeline registration.");
+                    provisional = (float)resolve.Invoke(delayed.Clock, new[] { Snapshot(1.08f) });
+                    var switchedSource = Go("Resolver replacement source").AddComponent<AudioSource>(); switchedSource.clip = audio.clip;
+                    lazySource = switchedSource;
+                    control.AlterUpdate(provisional); control.AlterLateUpdate();
+                    Check(delayed.CommittedFrames == 1 && delayed.DiscardedCandidates == 1,
+                        "Changing the current source resolver before commit invalidates the candidate.");
+                    object switchedSample = Activator.CreateInstance(pendingType, BindingFlags.Instance | BindingFlags.NonPublic,
+                        null, new object[] { switchedSource, switchedSource.clip, 1.09f, 17 }, null);
+                    Check(resolve.Invoke(delayed.Clock, new[] { switchedSample }) == null,
+                        "A resolver does not automatically rebind a different source lifetime.");
+                    delayed.Reset(switchedSource, clockState, limits);
+                    provisional = (float)resolve.Invoke(delayed.Clock, new[] { switchedSample });
+                    control.AlterUpdate(provisional); control.AlterLateUpdate();
+                    Check(delayed.CommittedFrames == 2, "Explicit reset admits the current replacement source.");
+                }
                 foreach (float? invalid in new float?[] { null, -1, float.NaN, float.PositiveInfinity })
                     using (var evaluatedClock = new OriginalLiveAudioClock(director, clockProvider, () => audio, sample => invalid))
                         Check(resolve.Invoke(evaluatedClock, new[] { Snapshot(1) }) == null && evaluatedClock.HeldReads == 1 &&

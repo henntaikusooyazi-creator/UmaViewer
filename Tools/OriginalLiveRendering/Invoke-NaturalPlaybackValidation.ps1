@@ -7,11 +7,13 @@ param(
     [ValidateRange(-1, 7)][int] $LeftTrack = -1,
     [switch] $FrameInputs,
     [switch] $AudioClock,
+    [string] $AudioClockCheckpoint,
     [switch] $AudioClockTailToExistingDirector,
     [ValidateRange(240, 600)][int] $MaximumWallSeconds = 240
 )
 $ErrorActionPreference = 'Stop'
 if ($AudioClockTailToExistingDirector -and !$AudioClock) { throw 'An explicit audio clock is required for the tail policy.' }
+if ($AudioClockCheckpoint -and !$AudioClock) { throw 'A clock checkpoint requires the explicit audio clock.' }
 if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $output = [IO.Path]::GetFullPath($OutputPath)
@@ -22,6 +24,11 @@ $busy = Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" |
     Where-Object { $_.CommandLine -and $_.CommandLine.Contains($repo) }
 if ($busy) { throw 'The target project already has an Editor; leave it untouched.' }
 $profile = (Resolve-Path -LiteralPath $ConfirmedProducerProfile).Path
+if ($AudioClockCheckpoint) {
+    $checkpoint = (Resolve-Path -LiteralPath $AudioClockCheckpoint).Path
+    if ($checkpoint -eq $repo -or $checkpoint.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+        (Get-Item -LiteralPath $checkpoint).Length -gt 65536) { throw 'A bounded external checkpoint is required.' }
+}
 $null = New-Item -ItemType Directory -Path $output -Force
 $saved = @{}
 foreach ($relative in @('ProjectSettings/GraphicsSettings.asset', 'ProjectSettings/QualitySettings.asset',
@@ -48,6 +55,7 @@ try {
     $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
     if ($FrameInputs) { $arguments += @('-liveFrameInputs', 'true') }
     if ($AudioClock) { $arguments += @('-liveAudioClock', 'true') }
+    if ($AudioClockCheckpoint) { $arguments += @('-liveClockCheckpoint', ('"' + $checkpoint + '"')) }
     if ($AudioClockTailToExistingDirector) { $arguments += @('-liveAudioClockTailToExistingDirector', 'true') }
     $arguments += @('-liveMaximumWallSeconds', $MaximumWallSeconds)
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -79,5 +87,9 @@ if ($FrameInputs) {
             $inputs.stageRgbComparisons -ne ($inputs.rgbSamples * 7)) {
         throw 'Current-frame depth/parameter RGB evidence did not pass.'
     }
+}
+if ($AudioClockCheckpoint -and (!$summary.smoothingRequested -or $summary.smoothingCommitted -ne $summary.audioClockJoined -or
+        $summary.smoothingDiscarded -ne 0 -or $summary.smoothingHeld -ne 0)) {
+    throw 'The explicit smoothing checkpoint did not commit exclusively through joined updates.'
 }
 Write-Output "Natural Viewer playback PASS: $($summary.validOwnerFrames) owner updates, $($summary.renderedFrames) generated frames; $($summary.warmupLateOnlyFrames) initial late-only frames held."
