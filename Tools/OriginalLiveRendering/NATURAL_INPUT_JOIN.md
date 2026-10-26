@@ -40,6 +40,12 @@ Directorの未登録経路は従来のdeltaTime加算です。登録時には現
 
 これは各Resolveに保存された4writerの限定帰属です。中央Dへの全writer閉包、camera映像のRGB一致、Viewerとの音声epoch、projection constructorの証明には拡張しません。先行runの読取り不足やPending判定も保持します。
 
+追加の独立runでも、同じ原作frameの中央Dについて保存writerを一意な完了taskのqueue範囲へ結べました。保存履歴の全件を取得した結果ではありません。既存decoderを変更せず再使用し、関連59試験を確認しました。このrunはStopCompleted、同一保持handle復旧、通常終了後の所有配備復元が成立しています。RGB replay用の補助入力は無効であり、新しいRGB比較の成功は主張しません。
+
+全writerの調査に先立ち、現在のD3D interface参照を限定照合しました。Map／Unmapの参照と命令prefixは静的候補と一致しましたが、別の描画methodの参照は一致せず、安全に拒否しました。静的table候補が一意でも、実deviceの全method参照が同じとは限りません。未照合のAPIを追加hookへ昇格せず、実際のwriter呼出しや全writer閉包も未認定です。
+
+先行runは初期table位置の照合拒否に加え、公式データ更新後の起動案内中にARM前の期限へ達しました。Pendingを保持し、通常終了後の所有配備復元だけを別に確認しました。現在の正常停止runによって、この記録を置換していません。
+
 ## Filmの再生成
 
 | 対象 | 入力の対応 | 再生成・比較 |
