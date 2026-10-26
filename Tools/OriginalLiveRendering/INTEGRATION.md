@@ -10,6 +10,8 @@
 
 ## 音声実戻り値と限定mask／合成replay（2026-10-26）
 
+後続の限定採取では、中央Dの保持リングを越える有界履歴から、対象版の観測済み描画writerを同じ一意なrender-task／cameraへ結びました。先行Clearの帰属と未hook APIは未確定です。D3Dの13参照は起動時／採取終了後の両方で現在moduleと照合できましたが、同じcontextでも一部が変化しており、静的候補の流用はできません。描画時点のcached音声と時計更新時のMusicTimeも分けて保存し、同一値として接続しません。[履歴・参照・時刻の境界](NATURAL_INPUT_JOIN.md#保持リングを越えた中央d履歴と現在d3d参照2026-10-26)を参照してください。新しいRGB比較、Viewer音声epoch、全writer閉包の成立は主張しません。
+
 原作で実際に使用されたfloat時刻getterから、同じ更新のMusicTime・Director・Control owner・整数比較値まで3件を結びました。別runの右maskでは実IAとbound VS定数を取得し、現在mappingによるalpha48/48、同じ原作frameのM／D／O再供給によるRGBA48/48をBuilt-in／URP14で確認しています。両pipelineは同じ観測の再評価です。
 
 追加したEditor検証器は [OriginalMaskExecutionValidation](../../Assets/Editor/OriginalMaskExecutionValidation.cs) です。公開人工部分13件、外部入力比較8件の計21チェックを確認しました。自然camera RGB・音声epoch・原作対Viewerの同一frame全画面一致は未成立です。[入力と証拠の境界](NATURAL_INPUT_JOIN.md#実時刻戻り値とmaskの実行入力2026-10-26) を参照してください。既存Control376件と142秒自然再生の過去受入は今回の件数に加算しません。
