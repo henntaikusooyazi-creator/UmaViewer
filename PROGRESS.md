@@ -1,8 +1,20 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-26。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-27。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## 楽曲時刻writerと時計getterの限定引継ぎ
+
+原作の実Updateから、楽曲用playbackの整数戻り値をfloat32へ変換し、秒へ換算してcached時刻へ直接書く経路を限定しました。隣接するBGM用playbackとは区別します。通常setterを観測しても呼出しがなかったため、同じ採取を繰り返さず、実metadataと保存命令から直接書込みへ追跡しました。
+
+最終の限定runでは、開始直後と後半の保存16件で同じplayback識別子・cue sheetを確認しました。cue sheetは既存Viewer loaderの伴奏候補と対応し、対象資産のhashも不変です。これは波形内容やPCM epochの一致証明ではありません。
+
+時計getterが先に、楽曲時刻の取得・書込みが後に実行されていました。保存された連続getter間にある実戻り値について、receiver・thread・owner・実frame・呼出し順・前後field値を照合し、**12遷移すべてで次のgetterのfloat32 bitと一致**しました。同一frameの先行getterへ直接結合できた件数は0のまま保持します。全更新へ固定の1 frame補正を加える契約にはしません。[時計の記録](Tools/OriginalLiveRendering/AUDIO_CLOCK_CHECKPOINT.md) に範囲と再発防止を記載しました。
+
+私有の最終native専用試験は30件、Pythonの読取・正確な丸め・引継ぎ判定は72件PASSです。後者の2 moduleはstatement／branchとも100%で、collector全体や解析CLIのcoverageではありません。採取runの外側Pendingとmetadata slot不変条件は保持し、hook解除・drain後の通常終了と所有配備復元を別に確認しています。
+
+今回の公開変更は文書のみです。通常時計やrendererは変更せず、既存498件・142秒Viewer再生・原作RGB replayも再実行していません。原作対ViewerのPCM epoch、GPU command生成owner、自然projection／mask、中央Dの残るwriter、同一原作frameの最終RGBは未確定です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown`を維持します。
 
 ## CPU Filmとowner値からの限定RGB再生成
 
