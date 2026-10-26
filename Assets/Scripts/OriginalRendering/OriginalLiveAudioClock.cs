@@ -14,9 +14,13 @@ namespace Gallop.Live.Rendering
             public readonly AudioClip Clip;
             public readonly float SourceTime;
             public readonly int SampledUnityFrame, AudioSamples;
+            public readonly string ClipName;
+            public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Sample(Pending sample)
             { Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time;
-              SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples; }
+              SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
+              ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
+              ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
         public readonly struct Observation
         {
@@ -25,9 +29,13 @@ namespace Gallop.Live.Rendering
             public readonly AudioClip Clip;
             public readonly int SampledUnityFrame, AudioSamples;
             public readonly float SourceTime, OwnerTime;
+            public readonly string ClipName;
+            public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Observation(OriginalLiveTimelineBridge.Frame selected, Pending sample)
             { Selected = selected; Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time; OwnerTime = sample.OwnerTime;
-              SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples; }
+              SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
+              ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
+              ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
         internal readonly struct Pending
         {
@@ -35,11 +43,16 @@ namespace Gallop.Live.Rendering
             internal readonly AudioClip Clip;
             internal readonly float Time, OwnerTime;
             internal readonly int UnityFrame, Samples;
+            internal readonly string ClipName;
+            internal readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Pending(AudioSource source, AudioClip clip, float time, int samples)
-            { Source = source; Clip = clip; Time = OwnerTime = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount; }
+            { Source = source; Clip = clip; Time = OwnerTime = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount;
+              ClipName = clip.name; ClipSampleCount = clip.samples; ClipFrequency = clip.frequency; ClipChannels = clip.channels; }
             internal Pending(Pending sample, float ownerTime)
             { Source = sample.Source; Clip = sample.Clip; Time = sample.Time; OwnerTime = ownerTime;
-              Samples = sample.Samples; UnityFrame = sample.UnityFrame; }
+              Samples = sample.Samples; UnityFrame = sample.UnityFrame;
+              ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
+              ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
         readonly Director director;
         readonly OriginalLiveContinuousProvider provider;

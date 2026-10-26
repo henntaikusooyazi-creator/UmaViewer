@@ -248,7 +248,8 @@ public static class OriginalLivePlaybackValidation
                     smoothingClock.CommittedState.CurrentTime != observed.OwnerTime)) result.audioClockFailures++;
                 if (result.audioClockSamples.Count < 192 && (result.audioClockSamples.Count == 0 || frame.Selected.Serial % 60 == 0))
                     result.audioClockSamples.Add(new AudioClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
-                        sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime, audioSamples = observed.AudioSamples, clipFrequency = observed.Clip.frequency,
+                        sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime, audioSamples = observed.AudioSamples, clipFrequency = observed.ClipFrequency,
+                        clipName = observed.ClipName, clipSamples = observed.ClipSampleCount, clipChannels = observed.ClipChannels,
                         sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(), renderedCount = preview.RenderCount });
             }
         }
@@ -451,7 +452,7 @@ public static class OriginalLivePlaybackValidation
     [Serializable] class Samples { public Sample[] rows; }
     [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
     [Serializable] class ClockCheckpoint { public string schema, smoothing; public float[] state, parameters; }
-    [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, sourceId, clipId, renderedCount; public float sourceTime, ownerTime; }
+    [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, clipSamples, clipChannels, sourceId, clipId, renderedCount; public string clipName; public float sourceTime, ownerTime; }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;

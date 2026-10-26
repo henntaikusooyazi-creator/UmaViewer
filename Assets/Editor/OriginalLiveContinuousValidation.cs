@@ -333,6 +333,10 @@ public static class OriginalLiveContinuousValidation
                 {
                     Check(sample.Source == audio && sample.Clip == audio.clip && sample.AudioSamples == 17 &&
                         sample.SampledUnityFrame == Time.frameCount, "Evaluator receives one current source/clip/frame snapshot.");
+                    Check(sample.ClipName == "Artificial clock clip" && sample.ClipSampleCount == 1024 &&
+                        sample.ClipFrequency == 8000 && sample.ClipChannels == 1,
+                        "Evaluator receives the sampled waveform metadata without converting its position into time.");
+                    sample.Clip.name = "Renamed after source sampling";
                     return OriginalLiveClockMath.TryEvaluate(sample.SourceTime, clockState, limits, out var next)
                         ? next.Next.CurrentTime : (float?)null;
                 }))
@@ -342,6 +346,11 @@ public static class OriginalLiveContinuousValidation
                     var observed = evaluatedClock.LastObservation.Value;
                     Check(evaluatedClock.JoinedFrames == 1 && observed.SourceTime == 1.06f && observed.OwnerTime == owner &&
                         observed.SourceTime != observed.OwnerTime, "Actual Control joins evaluated owner while preserving raw source time.");
+                    Check(observed.ClipName == "Artificial clock clip" && observed.ClipSampleCount == 1024 &&
+                        observed.ClipFrequency == 8000 && observed.ClipChannels == 1 &&
+                        observed.Clip.name == "Renamed after source sampling",
+                        "Owner observation retains the sampled metadata when the same clip is renamed during evaluation.");
+                    audio.clip.name = "Artificial clock clip";
                     resolve.Invoke(evaluatedClock, new[] { Snapshot(1.06f) });
                     audio.clip = Own(AudioClip.Create("Replacement artificial clip", 1024, 1, 8000, false));
                     control.AlterUpdate(owner); control.AlterLateUpdate();
