@@ -556,3 +556,5 @@ GPU試験のgeometry・key・TextureMappingは人工入力です。原作の保�
 任意の平滑化時計登録、source／clip lifetime、外部checkpoint形式と検証範囲は [AUDIO_CLOCK_CHECKPOINT.md](AUDIO_CLOCK_CHECKPOINT.md) を参照してください。既存の音声時計APIと未登録時のDirector時計は維持します。
 
 後続の原作採取では、実GPUイベント中の安定したowner時計を、同じ実Unity frameの消費getter／Control観測へ限定結合しました。command生成元、原作とViewerの音声epoch、最終RGBとの対応は別の未確定事項です。今回の追加公開差分は文書のみで、既存の時計・renderer・通常UIを変更していません。
+
+さらに、再生開始前から観測した先頭getterの明示state候補で、142秒のViewer自然再生を検証しました。音声・平滑化3,238更新と既存時計によるtail 85更新を分離しています。原作採取のmetadata slot lifetimeは未閉鎖で、外側Pendingと通常終了後の配備復元を別判定として保持します。初期化factoryやruntime sourceの変更はありません。
