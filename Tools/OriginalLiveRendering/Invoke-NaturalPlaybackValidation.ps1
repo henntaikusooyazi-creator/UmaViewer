@@ -5,9 +5,13 @@ param(
     [Parameter(Mandatory)][string] $ConfirmedProducerProfile,
     [ValidateRange(0, 7)][int] $RightTrack = 0,
     [ValidateRange(-1, 7)][int] $LeftTrack = -1,
-    [switch] $FrameInputs
+    [switch] $FrameInputs,
+    [switch] $AudioClock,
+    [switch] $AudioClockTailToExistingDirector,
+    [ValidateRange(240, 600)][int] $MaximumWallSeconds = 240
 )
 $ErrorActionPreference = 'Stop'
+if ($AudioClockTailToExistingDirector -and !$AudioClock) { throw 'An explicit audio clock is required for the tail policy.' }
 if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $output = [IO.Path]::GetFullPath($OutputPath)
@@ -43,6 +47,9 @@ try {
         '-logFile', ('"' + (Join-Path $output 'unity.private.log') + '"'))
     $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
     if ($FrameInputs) { $arguments += @('-liveFrameInputs', 'true') }
+    if ($AudioClock) { $arguments += @('-liveAudioClock', 'true') }
+    if ($AudioClockTailToExistingDirector) { $arguments += @('-liveAudioClockTailToExistingDirector', 'true') }
+    $arguments += @('-liveMaximumWallSeconds', $MaximumWallSeconds)
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()
 }
@@ -59,6 +66,10 @@ if (!$process -or !$process.HasExited -or $process.ExitCode -ne 0) {
 }
 $summary = Get-Content -Raw -LiteralPath (Join-Path $output 'playback.private.json') | ConvertFrom-Json
 if ($summary.status -ne 'NaturalViewerPlaybackCompleted') { throw 'Natural Viewer playback acceptance failed.' }
+if ($AudioClock -and (!$summary.audioClockRequested -or ($summary.audioClockJoined + $summary.legacyTailFrames) -ne $summary.validOwnerFrames -or
+        $summary.audioClockRejected -ne 0 -or $summary.audioClockFailures -ne 0 -or $summary.audioClockReads -le 100)) {
+    throw 'Current Viewer audio -> owner -> rendered serial did not pass.'
+}
 if ($FrameInputs) {
     $inputs = Get-Content -Raw -LiteralPath (Join-Path $output 'frame-inputs.private.json') | ConvertFrom-Json
     if ($inputs.mode -ne 'ArtificialSevenStageDiagnostic' -or $inputs.stages -ne 7 -or

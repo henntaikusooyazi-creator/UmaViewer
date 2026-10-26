@@ -260,6 +260,44 @@ public static class OriginalLiveContinuousValidation
             lifetime.Dispose(); lifetime.Dispose();
             Check(ReferenceEquals(control.OriginalCompositeBridge, replacement), "Disposal never detaches a replacement registration.");
             control.OriginalCompositeBridge = null;
+            director._liveTimelineControl = control;
+            var advance = typeof(Director).GetMethod("TryAdvancePlaybackTime", BindingFlags.Instance | BindingFlags.NonPublic);
+            bool Advance(float delta) => (bool)advance.Invoke(director, new object[] { delta });
+            director._liveCurrentTime = 10;
+            Check(Advance(.125f) && director._liveCurrentTime == 10.125f, "Unregistered Director retains the deltaTime arithmetic.");
+            using (var clockProvider = new OriginalLiveContinuousProvider(control, profile, binding))
+            {
+                foreach (float supplied in new[] { 1.25f, 1.25f, .5f, 2f })
+                {
+                    int calls = 0; director.OriginalLiveTimeProvider = () => { calls++; return supplied; };
+                    Check(Advance(99) && calls == 1 && director._liveCurrentTime == supplied, "Explicit sample replaces accumulation, including repeated time and backward seek.");
+                    control.AlterUpdate(director._liveCurrentTime); control.AlterLateUpdate();
+                    Check(clockProvider.LastFrame.Selections[0].Selection.ComparisonClock.Value.CurrentOwnerTime == supplied,
+                        "Actual Control receives the supplied owner time in the same selected update.");
+                }
+                director.OriginalLiveTimeProvider = () => null;
+                Check(!Advance(99) && director._liveCurrentTime == 2 &&
+                    (bool)typeof(Director).GetField("_lateTimelineAppliedThisFrame", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(director),
+                    "Missing explicit sample holds owner and suppresses a late-only render.");
+                foreach (float invalid in new[] { -1f, float.NaN, float.PositiveInfinity })
+                {
+                    director.OriginalLiveTimeProvider = () => invalid; rejected = false;
+                    try { Advance(99); } catch (TargetInvocationException e) when (e.InnerException is InvalidOperationException) { rejected = true; }
+                    Check(rejected && director._liveCurrentTime == 2, "Invalid explicit time never mutates owner.");
+                }
+                var foreign = director.OriginalLiveTimeProvider; rejected = false;
+                try { new OriginalLiveAudioClock(director, clockProvider, () => null); } catch (InvalidOperationException) { rejected = true; }
+                Check(rejected && ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Audio registration cannot replace an existing provider.");
+                director.OriginalLiveTimeProvider = null;
+                var audioClock = new OriginalLiveAudioClock(director, clockProvider, () => null);
+                Check(!Advance(99) && audioClock.HeldReads == 1 && audioClock.ReadCount == 0, "Missing explicit audio source does not synthesize zero time.");
+                audioClock.Dispose(); audioClock.Dispose();
+                Check(director.OriginalLiveTimeProvider == null, "Audio registration releases only its own provider.");
+                audioClock = new OriginalLiveAudioClock(director, clockProvider, () => null);
+                director.OriginalLiveTimeProvider = foreign; audioClock.Dispose();
+                Check(ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Audio disposal preserves a replacement provider.");
+                director.OriginalLiveTimeProvider = null;
+            }
             var character = Go("Synthetic explicit physics opt out").AddComponent<UmaContainerCharacter>();
             Check(character.InitializeNativePhysicsOnLoad, "Existing physics initialization remains the default.");
             character.InitializeNativePhysicsOnLoad = false; character.LoadPhysics();

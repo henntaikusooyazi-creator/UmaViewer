@@ -2,6 +2,20 @@
 
 検証ブランチの限定結果です。通常ライブへの自動採用、原作同一frameの全画面一致、時刻契約の成立を認定するものではありません。
 
+## Viewerの現在音声からownerと描画serialへの接続
+
+`OriginalLiveAudioClock` を明示登録すると、指定した現在の `AudioSource.time` をDirectorへ渡し、実Controlが使ったowner値とのfloat32 bit一致を確認します。source／clip参照、観測したViewer Unity frame、同じselected serialを保持します。`timeSamples` は観測metadataであり、時刻への推測変換には使いません。原作Unity frameとの対応や音声epochを生成するAPIではありません。
+
+Directorの未登録経路は従来のdeltaTime加算です。登録時には現在音声の値へ置き換わるため、従来と時刻の進み方が変わります。欠落時はowner更新とlate-only描画を保留し、不正な時刻を拒否します。既存の録画・slider操作の分岐は維持し、登録・解除時に他のproviderを上書きしません。
+
+人工Control結合は**410/410 PASS**（既存376＋時計経路34）。同時刻、後退時刻、不正値、欠落、登録の所有権を確認しました。実楽曲は142秒の自然終端とViewer復帰まで進み、**3,446/3,446描画**、左右同時**26/26更新**、fault／例外0でした。
+
+このrunの内訳は、現在音声からowner・同じserialの描画へ結べた**3,360更新**と、明示した既存Director時計の末尾**86更新**です。音声clipがtimelineより先に終わるため、音声だけのclockでは終端まで進めません。検証用 `-AudioClockTailToExistingDirector` は、同じsource／clipの停止を観測した後に登録を終了し、既存時計で残りのtimelineを再生します。この末尾は音声同期成功や原作方式の証明に加算しません。登録単体の既定動作は引き続き保留です。
+
+先行する2runの壁時計timeoutはFailedのまま保存しています。追加の時間枠はwrapperの `-MaximumWallSeconds` で明示し、既定の240秒と自然終端の条件は維持しました。最終runは明示した有限枠で完走しています。公開wrapperで `-AudioClock` を指定した場合だけ、この接続を検証します。通常UIへの自動登録はありません。
+
+原作のfloat getterとViewer音声の時刻原点、原作側の音声終了後の時計生成、同一原作frameの自然RGBは引き続き未成立です。既存の原作3更新の結合や48位置の保存入力replayを、今回の自然描画件数へ合算しません。
+
 ## 実時刻戻り値とmaskの実行入力（2026-10-26）
 
 原作の現在の再生で使用されたfloat時刻getterの実戻り値を取得し、同じ音声実体、playback識別子、import参照、owner、thread、Unity frameに属する3更新を結びました。戻り値・前後のsource値・MusicTimeはfloat32 bit一致し、時刻controllerからDirector、Control owner、現在／前回の整数比較値への対応も成立しました。import参照は同一性の文脈として保持しています。この分岐の戻り値をCRI GetTimeの整数戻り値とは扱いません。CRI経路を観測できなかった先行runは、そのまま未達として保持します。

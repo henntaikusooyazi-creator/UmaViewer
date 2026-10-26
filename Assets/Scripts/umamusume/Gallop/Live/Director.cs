@@ -70,6 +70,21 @@ namespace Gallop.Live
 
         public bool IsRecordVMD;
 
+        // Explicit continuous-preview registration only. Null preserves the
+        // existing deltaTime clock; a missing registered sample holds this update.
+        [NonSerialized] public Func<float?> OriginalLiveTimeProvider;
+
+        private bool TryAdvancePlaybackTime(float defaultDelta)
+        {
+            if (OriginalLiveTimeProvider == null) { _liveCurrentTime += defaultDelta; return true; }
+            float? sample = OriginalLiveTimeProvider();
+            if (!sample.HasValue) { _lateTimelineAppliedThisFrame = true; return false; }
+            if (float.IsNaN(sample.Value) || float.IsInfinity(sample.Value) || sample.Value < 0)
+            { _lateTimelineAppliedThisFrame = true; throw new InvalidOperationException("An explicit playback time must be finite and nonnegative."); }
+            _liveCurrentTime = sample.Value;
+            return true;
+        }
+
         public bool RequireStage = true;
 
         private bool _lateTimelineAppliedThisFrame;
@@ -563,7 +578,7 @@ namespace Gallop.Live
                     }
                     else
                     {
-                        _liveCurrentTime += Time.deltaTime;
+                        if (!TryAdvancePlaybackTime(Time.deltaTime)) return;
                         UI.ProgressBar.SetValueWithoutNotify(_liveCurrentTime / totalTime);
                         OnTimelineUpdate(_liveCurrentTime);
                         ApplyTimelineLateUpdate();

@@ -1,5 +1,11 @@
 # 実Controlによる独立結合検証
 
+## 現在のViewer音声と同一更新の描画
+
+明示的な `OriginalLiveAudioClock` により、現在音声のfloat値をDirector／実Controlのownerとselected serialへ接続しました。未登録時の時計を維持し、人工Control結合は410/410 PASSです。
+
+実楽曲142秒は3,446描画で自然終端・Viewer復帰に成功しました。音声に結合した3,360更新と、明示した既存時計の末尾86更新を分けて記録しています。左右同時26/26、fault0。音声clipが先に終わるため、末尾は音声同期や原作clockの証明には含めません。[入力と検証条件](NATURAL_INPUT_JOIN.md#viewerの現在音声からownerと描画serialへの接続)を参照してください。原作とViewerの音声epoch・同一frame RGBは未成立です。
+
 ## 音声実戻り値と限定mask／合成replay（2026-10-26）
 
 原作で実際に使用されたfloat時刻getterから、同じ更新のMusicTime・Director・Control owner・整数比較値まで3件を結びました。別runの右maskでは実IAとbound VS定数を取得し、現在mappingによるalpha48/48、同じ原作frameのM／D／O再供給によるRGBA48/48をBuilt-in／URP14で確認しています。両pipelineは同じ観測の再評価です。

@@ -39,6 +39,7 @@ public static class OriginalLivePlaybackValidation
     static Func<OriginalLiveTimelineBridge.Frame, Camera> resolveBaseCamera;
     static OriginalLiveChannelEvidence channelEvidence;
     static OriginalNaturalPostProcessProbe frameInputs;
+    static OriginalLiveAudioClock audioClock;
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -65,6 +66,8 @@ public static class OriginalLivePlaybackValidation
         int selectedLeft = Argument("-liveLeftTrack") == null ? -1 : int.Parse(Argument("-liveLeftTrack"));
         if (selectedRight < 0 || selectedRight > 7 || selectedLeft < -1 || selectedLeft > 7 || selectedLeft == selectedRight)
             throw new ArgumentException("Explicit distinct ordered track ordinals required");
+        int timeout = Argument("-liveMaximumWallSeconds") == null ? 240 : int.Parse(Argument("-liveMaximumWallSeconds"));
+        if (timeout < 240 || timeout > 600) throw new ArgumentOutOfRangeException("-liveMaximumWallSeconds");
         SessionState.SetBool(Active, true);
         SessionState.SetBool(Active + ".Ending", false);
         SessionState.SetString(Active + ".Output", output);
@@ -73,6 +76,9 @@ public static class OriginalLivePlaybackValidation
         SessionState.SetInt(Active + ".Left", selectedLeft);
         SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
         SessionState.SetBool(Active + ".FrameInputs", Argument("-liveFrameInputs") == "true");
+        SessionState.SetBool(Active + ".AudioClock", Argument("-liveAudioClock") == "true");
+        SessionState.SetBool(Active + ".AudioTail", Argument("-liveAudioClockTailToExistingDirector") == "true");
+        SessionState.SetInt(Active + ".MaximumWallSeconds", timeout);
         EditorApplication.playModeStateChanged += State;
         EditorApplication.update += Poll;
         EditorSceneManager.OpenScene("Assets/Scenes/Version2.unity");
@@ -174,6 +180,13 @@ public static class OriginalLivePlaybackValidation
             frameInputs = new OriginalNaturalPostProcessProbe(preview);
             preview.SetInputFramePostProcessor(frameInputs.Processor, Shader.Find("Hidden/OriginalRendering/DepthCopy"));
         }
+        if (SessionState.GetBool(Active + ".AudioClock", false))
+        {
+            audioClock = new OriginalLiveAudioClock(director, provider, () =>
+                director && director.liveMusic?.sourceList != null && director.liveMusic.sourceList.Count > 0 ? director.liveMusic.sourceList[0] : null);
+            result.audioClockRequested = true; result.clockSource = "ExplicitCurrentViewerAudioTime";
+            result.audioClockTailPolicy = SessionState.GetBool(Active + ".AudioTail", false) ? "ReleaseToExistingDirectorAtSourceStop" : "Hold";
+        }
         provider.FrameReady += Observe;
         var canvas = new GameObject("Explicit Viewer preview").AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         var image = new GameObject("Continuous output").AddComponent<RawImage>(); image.transform.SetParent(canvas.transform, false);
@@ -190,6 +203,23 @@ public static class OriginalLivePlaybackValidation
     }
     static void Observe(OriginalLiveContinuousProvider.Frame frame)
     {
+        if (audioClock != null)
+        {
+            result.audioClockReads = audioClock.ReadCount; result.audioClockJoined = audioClock.JoinedFrames;
+            result.audioClockHeld = audioClock.HeldReads; result.audioClockRejected = audioClock.RejectedFrames;
+            if (audioClock.LastObservation.HasValue)
+            {
+                var observed = audioClock.LastObservation.Value;
+                result.audioClipLength = observed.Clip.length; result.audioSourcePitch = observed.Source.pitch;
+                if (!ReferenceEquals(observed.Selected, frame.Selected) || observed.SampledUnityFrame != Time.frameCount ||
+                    preview.LastStatus != "RenderedContinuousViewerCameras") result.audioClockFailures++;
+                if (result.audioClockSamples.Count < 192 && (result.audioClockSamples.Count == 0 || frame.Selected.Serial % 60 == 0))
+                    result.audioClockSamples.Add(new AudioClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
+                        sourceTime = observed.SourceTime, audioSamples = observed.AudioSamples, clipFrequency = observed.Clip.frequency,
+                        sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(), renderedCount = preview.RenderCount });
+            }
+        }
+        else if (result.audioClockReleasedAtStop) result.legacyTailFrames++;
         if (result.channelCount == 2) { ObserveTwo(frame); return; }
         result.frames++;
         if (frame.Selections.Count != 1) { result.selectionFailures++; return; }
@@ -295,9 +325,33 @@ public static class OriginalLivePlaybackValidation
     static void Poll()
     {
         if (ending || !SessionState.GetBool(Active, false)) return;
-        if (EditorApplication.timeSinceStartup - started > 240) { Finish("Bounded playback timeout"); return; }
+        if (EditorApplication.timeSinceStartup - started > SessionState.GetInt(Active + ".MaximumWallSeconds", 240))
+        { Finish("Bounded playback timeout"); return; }
         if (result != null && result.exceptions > 0) { Finish(result.firstException); return; }
         if (result == null || provider == null) return;
+        if (audioClock != null)
+        {
+            // Poll counters even when no owner update is emitted during a hold.
+            result.audioClockReads = audioClock.ReadCount; result.audioClockJoined = audioClock.JoinedFrames;
+            result.audioClockHeld = audioClock.HeldReads; result.audioClockRejected = audioClock.RejectedFrames;
+            if (SessionState.GetBool(Active + ".AudioTail", false) && audioClock.HeldReads > 0 &&
+                audioClock.LastObservation.HasValue && director && !director.IsRecordVMD &&
+                !director.sliderControl.is_Touched && !director.sliderControl.is_Outed)
+            {
+                var last = audioClock.LastObservation.Value; var source = last.Source;
+                if (source && source.clip == last.Clip && !source.isPlaying && !source.loop)
+                {
+                    result.audioClockReleasedAtStop = true; result.sourceStopUnityFrame = Time.frameCount;
+                    result.sourceStopTime = source.time; result.sourceStopSamples = source.timeSamples;
+                    result.lastSourceSamples = last.AudioSamples; result.sourceClipSamples = last.Clip.samples;
+                    result.tailStartOwnerTime = director._liveCurrentTime;
+                    // Explicit test policy only: end this registration. The
+                    // existing Director clock then owns the remaining timeline.
+                    audioClock.Dispose(); audioClock = null;
+                    result.clockSource = "ViewerAudioWindowThenExistingDirectorTail_PreviewPolicy";
+                }
+            }
+        }
         result.renderedFrames = preview.RenderCount;
         result.ownerKeys = keys.Count + leftKeys.Count;
         if (provider.ConsumerFaultCount > 0 || provider.Bridge.FaultCount > 0 || result.renderFailures > 0)
@@ -324,6 +378,8 @@ public static class OriginalLivePlaybackValidation
                 provider.Bridge.FaultCount == 0 && provider.ConsumerFaultCount == 0 && result.lastOwnerTime >= result.timeLength &&
                 result.warmupLateOnlyFrames <= 1 && preview.RenderCount == result.validOwnerFrames;
             pass &= frameInputs == null || frameInputs.Passed;
+            pass &= !result.audioClockRequested || (result.audioClockJoined + result.legacyTailFrames == result.validOwnerFrames &&
+                result.audioClockRejected == 0 && result.audioClockFailures == 0 && result.audioClockReads > 100);
             Finish(pass ? null : "Natural playback acceptance predicate failed");
         }
     }
@@ -342,7 +398,7 @@ public static class OriginalLivePlaybackValidation
         result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
         result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
         if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
-        channelEvidence?.Dispose(); frameInputs?.Dispose(); preview?.Dispose(); provider?.Dispose();
+        channelEvidence?.Dispose(); frameInputs?.Dispose(); audioClock?.Dispose(); preview?.Dispose(); provider?.Dispose();
         if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
         Save(); Application.logMessageReceived -= Log;
         EditorApplication.ExitPlaymode();
@@ -350,6 +406,7 @@ public static class OriginalLivePlaybackValidation
     [Serializable] class Profile { public float fixedThickness, minimumThickness, angleDivisor, secondaryOrigin, secondaryScale, durationMultiplier; public float[] kindBases; }
     [Serializable] class Samples { public Sample[] rows; }
     [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
+    [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, sourceId, clipId, renderedCount; public float sourceTime; }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;
@@ -363,6 +420,15 @@ public static class OriginalLivePlaybackValidation
         public string[] missingPreloads;
         public bool nativePhysicsSkipped, audioPlayingObserved, finalImage, middleImage, naturalExitObserved;
         public bool channelEvidenceCollected;
+        public bool audioClockRequested;
+        public long audioClockReads, audioClockJoined, audioClockHeld, audioClockRejected;
+        public int audioClockFailures;
+        public float audioClipLength, audioSourcePitch;
+        public string audioClockTailPolicy;
+        public bool audioClockReleasedAtStop;
+        public int legacyTailFrames, sourceStopUnityFrame, sourceStopSamples, lastSourceSamples, sourceClipSamples;
+        public float sourceStopTime, tailStartOwnerTime;
+        public List<AudioClockSample> audioClockSamples = new List<AudioClockSample>();
         public bool OriginalVerified = false, runtime_contract = false, SourceToViewerClockContract = false;
         public string Phase257cause = "Unknown", textureMapping = "ExplicitFullViewportViewerPreview", clockSource = "NaturalViewerDirectorOwnerUpdates";
     }
