@@ -70,3 +70,29 @@ readerの位置や先読み済みbyte数を、現在の音声出力位置や `Au
 先行監査では原本を読取のみで扱い、hashを前後照合しました。その監査の追加原作run、Unity再生、GPU readbackは0件です。今回の追加採取でも公開変更は文書のみで、既存498件・142秒Viewer再生・過去のRGB replayは再実行していません。通常UI、時計、renderer、成功ブランチ、既存DLLの未stage状態を維持します。
 
 次の有限対象は、今回の実playback識別値に属する実ロード資産と、実再生sample位置です。同期時刻の整数値をsample位置へ換算して補完せず、資産load／playback bindingとsample取得の実行境界を別々に資格化します。今のcollectorを同条件で繰り返すだけでは、この不足を埋めたことにはなりません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 再生sample取得境界の追加調査
+
+同じSongの型付きplayback fieldから辿った型について、同期時刻と再生sample数のmanaged wrapper／native import wrapperを限定採取しました。4 methodの先頭命令は同一buildの保存命令と一致し、sample取得側ではimport文字列のpointer・長さ・encoding・終端と、引数からnative呼出し、戻り値のbool変換までを確認しました。子型の行に付くimage名はroot lookupのcontextであり、子型のdeclaring assemblyの証明には使用しません。
+
+`GetNumPlayedSamples` のnative exportは存在します。しかし、同期時刻の関数と同じ内部値を返す処理ではありません。選択したsample取得経路には、出力callbackの後に前回sample値を書き換え、条件に応じてwrap履歴を進める命令があります。このため、手動の問い合わせを原作stateに影響しない観測として追加していません。
+
+追加runの結果は次の範囲に限ります。
+
+| 対象 | 今回の判定 |
+| --- | --- |
+| 型付きfieldからsample wrapperへの対応 | 保存metadataと命令prefixで限定成立 |
+| native exportの現在pointer・命令 | hook準備時の資格化成立 |
+| 対象exportの自然呼出し | 観測対象区間で0件 |
+| 再生sample数・sample rateの実戻り値 | 未取得 |
+| 基底managerの資産load候補 | 限定名selectorで0件。全methodの不存在を意味しない |
+| 原作実ロードACB／AWBの内容identity | 未成立 |
+| 原作PCMとViewer音声時計のepoch | 未成立 |
+
+既存1枠の置換で、hook上限・source graph・読取上限を増やしていません。DLLは既存上限内です。native専用23ケース、metadata選択53件、reader72件を検証しました。23ケースは通常fixtureとproduction同一定義のfixtureで同じケースを実施しており、独立46件とは数えません。readerは無呼出し、非対象playback、失敗戻り値、欠落出力、不正値、上限超過を分離します。対象2 moduleのstatement／branchは100%ですが、実reader orchestrationやnative collector全体のcoverageではありません。
+
+採取runの外側は `PendingManualRecovery / observation_flags`、保存bodyの `complete/pins_ok=false`、metadata slot不変条件の不成立を保持します。28 hook解除、remaining 0、drain、code pin照合、読取error／limitなしは別の保存証拠です。通常WM_CLOSE後にgame不在と所有配備復元を確認しており、保持handleによる実行時復旧成功やStopCompletedへ昇格しません。
+
+次の対象は、同一buildで限定したnative playback識別値のlookupから実資源と出力callbackを結ぶ境界です。lookupには識別値のpool選択・世代照合があるため、単なるpointer流用や無条件のアドレス計算を採用しません。資産load側も、今回の空selectorを根拠に不存在とはせず、正式なmethod／native資源bindingを別に限定します。sample exportの無呼出しを繰り返すrunや、同期ミリ秒からのsample位置の補完には進みません。
+
+公開runtimeは変更していません。既存498件、142秒Viewer再生、過去のRGB replayは今回再実行せず、今回の受入件数へ加算しません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。

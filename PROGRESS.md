@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 再生sample取得境界の限定調査
+
+Songが保持する型付きplayback fieldから、実際のsample取得wrapperとnative import wrapperを特定しました。同一buildの4 methodの先頭命令を実metadataと照合し、sample取得のimport指定、引数の受渡し、呼出し後のbool変換を限定静的確認しています。
+
+追加runでは既存の1 hook枠をsample取得exportの受動観測へ置換しました。runtimeのexport pointer／命令とtyped Songの資格化は成立しましたが、観測対象区間の自然呼出しは0件でした。これは再生sample数0ではありません。同期時刻からの換算、手動API呼出し、Viewer epochの補完は行っていません。native実装にはsample履歴を更新する処理もあるため、問い合わせAPIを無条件に読取専用とは扱いません。
+
+native専用23ケースは通常fixtureとproduction同一定義のfixtureでそれぞれPASS、metadata選択53件、reader72件PASSです。reader対象2 moduleのstatement／branchは100%で、collector全体のcoverageではありません。metadataは既存上限内で取得しました。基底managerの限定method名selectorは対象0件であり、資産load methodの不存在を示しません。
+
+外側はmetadata監査によるPendingを保持しています。28 hook解除・remaining 0・drain・code pin照合と、通常終了後の所有配備復元は別に確認しました。公開変更は文書のみです。次は静的に限定したnative playback識別値のlookupと資源／出力callbackの実体を結ぶ観測点を資格化し、同じsample export観測だけを繰り返しません。[sample境界と残件](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#再生sample取得境界の追加調査) を参照してください。
+
 ## Songの同期時刻・補助値とcached getterの追加照合
 
 自然呼出しの補助値取得境界で、同じSongに属する同期時刻、補助戻り値、実playback識別値を分離して保存しました。typed receiver、直接・親caller、コピーされたSong引数、同じnative playback識別値を照合しています。同期時刻が0の場合の分岐も再計算し、連続境界を満たす次のcached getterとfloat32 bit一致しました。親関数の選択戻り値は、この2入力と保存命令からの再計算であり、今回その戻り値自体を直接採取したとは扱いません。
