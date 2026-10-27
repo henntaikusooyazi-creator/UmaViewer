@@ -96,3 +96,31 @@ readerの位置や先読み済みbyte数を、現在の音声出力位置や `Au
 次の対象は、同一buildで限定したnative playback識別値のlookupから実資源と出力callbackを結ぶ境界です。lookupには識別値のpool選択・世代照合があるため、単なるpointer流用や無条件のアドレス計算を採用しません。資産load側も、今回の空selectorを根拠に不存在とはせず、正式なmethod／native資源bindingを別に限定します。sample exportの無呼出しを繰り返すrunや、同期ミリ秒からのsample位置の補完には進みません。
 
 公開runtimeは変更していません。既存498件、142秒Viewer再生、過去のRGB replayは今回再実行せず、今回の受入件数へ加算しません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## Song資源と内部sample照会callbackの追加調査
+
+先行runで保存した実native playback識別値を起点に、同一buildのlookupと資源取得命令を限定確認しました。pool・index・世代照合、bounded list、現在のinterface／context／callback pointerを読み、単なるIDからpointerへの換算にはしていません。保存8件すべてで同じSongの前後資源identityを確認しました。取得した現在callbackのprefixは原作ファイルと一致し、そのthunkから直接calleeへ対象を絞っています。この段階だけではcallbackの自然実行を主張しません。
+
+続く独立runでは、対象calleeを含む限定11命令範囲を実moduleへ照合してからhookを準備しました。追加したhookはなく、既存1枠の置換です。元のcallbackを通常通り1回実行し、その呼出しが書いたsample数とrateの出力を別々に保存しました。戻り値carrierはopaqueのままで、公開SDK queryの成功boolには読み替えません。SDK／ゲーム関数を採取側から手動呼出ししていません。
+
+| 対象 | 今回の判定 |
+| --- | --- |
+| Song識別値から実資源・callback pointer | 先行runの選択8件で前後identity成立 |
+| 内部callbackの自然呼出し出力 | 後続runで16件保存 |
+| 同じSong・現在contextと前後資源を満たす出力 | 選択8/8件で成立 |
+| その他8件 | fresh資源snapshot対象外として保留 |
+| sample数とcontext counter | 選択8件で前後snapshotの範囲内 |
+| rateとcontext | 選択8件で両snapshotに一致 |
+| callback時点の実Unity frame | 未取得。別スレッドのため保持owner frameと区別 |
+| 公開SDK exportの実戻り値 | 今回未観測 |
+| PCM出力buffer・実スピーカー位置・Viewer epoch | 未成立 |
+
+sample出力の直接readerとrate取得は限定命令で説明できます。一方、counterを書き進める上流処理、decoderの論理先頭との関係、出力buffering、開始設定は閉じていません。開始側のrateには変化があり、全記録を一定rateで秒へ換算したり、HCA delay情報を未確認offsetとして加減したりしません。前回exportの観測0件はそのまま保持し、今回内部callbackが自然に動いたこととの違いを残します。
+
+最終native callback fixture26件は引数・出力・一度だけのoriginal実行、環境保存、別threadでUnity getterを呼ばない経路、hook復元・上限を確認しました。通常fixtureとproduction同一定義のfixtureは独立52件と数えません。資源／命令資格化fixture81件、Python reader95件もPASSし、対象3 reader moduleのstatement／branchは100%です。先行runの68件／53件は別sourceに対する検証として保持し、最終件数へ合算しません。
+
+両runの外側は `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持します。28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なしと、通常WM_CLOSE後のgame不在・所有配備復元は別に確認しました。StopCompleted、実行中の保持handle復旧成功、過去Pendingの解消には昇格しません。
+
+最初の閉鎖GPU試験でdisable時のthread集合不安定を検出したため、その失敗を保持し、同じ実行ファイル・判定条件による独立再検証と以後のfocused試験を記録しています。追加callback版の最終native試験も通過しています。私有wireの固定長配置・読取上限を維持し、原作バイナリ／音声本体／鍵／native layout／生のpointer・値を公開していません。
+
+次の有限対象は、今回の実contextでsample counterを更新する処理と、同じ再生lifetimeの論理sample位置です。内部query出力の取得を音声出力callback取得やPCM epoch確定へ拡張せず、原作とViewerの同一frame RGBも未成立のまま保持します。通常runtimeは変更せず、既存498件・142秒Viewer再生・RGB replayも今回再実行していません。

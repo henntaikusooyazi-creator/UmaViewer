@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## Song資源から内部sample照会callbackへの限定接続
+
+前回のsample export無呼出しを繰り返さず、型付きSongの実playback識別値から、世代を照合するlookup、再生資源、現在のcallback context／関数pointerへ追跡しました。先行runでは保存8件すべてで前後の資源identityとcallback pointerを対応付けました。続く独立runでは、保存pointerのthunk先と直接calleeの命令を起動前に資格化し、既存1枠をその内部callbackの受動観測へ置換しています。
+
+自然呼出し16件の出力を保存し、うち前後の資源snapshotを保存する対象8件すべてで、同じSong／context、sample数・rateの実出力を結合しました。sample数は同じcontextの前後counterの範囲内、rateは両snapshotと一致しています。残る8件はfresh資源証拠がないため保留です。callbackはowner getterと別スレッドで動いており、保持されたowner frameをcallback時点の実Unity frameとは扱いません。
+
+これは内部sample照会callbackの出力確認です。公開SDK exportの戻り値、PCM bufferを生成するcallback、スピーカーへ出たsample位置、Viewer PCM epochの証明とは区別します。開始側ではrateの変化も観測されており、固定rateによる時刻換算やepoch補完は追加していません。
+
+最終の閉鎖native callback試験26件、資源／命令資格化81件、Python reader95件PASS。26件は通常・production同一定義のfixtureで再評価した同じケースです。reader対象3 moduleのstatement／branchは100%で、collector全体のcoverageではありません。両runとも外側のmetadata監査Pendingを維持し、28 hook解除・remaining 0・drain・code pin照合と、通常WM_CLOSE後の所有配備復元を独立に確認しました。
+
+公開変更は文書2件のみです。通常時計・renderer・成功ブランチを変更せず、既存498件・142秒Viewer再生・RGB replayは再実行していません。次は実context counterの更新元と、decoderの論理sample先頭・再生開始設定を結ぶ有限範囲を確認します。[資源とcallbackの記録](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#song資源と内部sample照会callbackの追加調査) を参照してください。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
 ## 再生sample取得境界の限定調査
 
 Songが保持する型付きplayback fieldから、実際のsample取得wrapperとnative import wrapperを特定しました。同一buildの4 methodの先頭命令を実metadataと照合し、sample取得のimport指定、引数の受渡し、呼出し後のbool変換を限定静的確認しています。
