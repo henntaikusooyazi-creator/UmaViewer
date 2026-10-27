@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 保持値の設定入力からbuffer消費への同一Song接続
+
+追加runで、`held_source_input` の実setter引数、書込み後のfield、保持値確定後のcheckpoint、最初に観測したbuffer consumerを同じSong・資源・contextへ結びました。保持値は現在rateと入力から、限定命令どおりの2回のfloat32乗算・整数化で再計算でき、後続consumerの減算項にも一致しました。保持値確定後のcalleeでの観測であり、設定関数全体の入口／出口traceとは区別します。
+
+16記録はsetter 1件、確定後checkpoint 1件、consumer 14件です。fresh資源を保存した8件すべてを資格化し、その内訳はsetter・checkpoint各1件とconsumer 6件です。開始時累積0の最初の観測consumerまで1本の順序付きlineageが成立しました。未保存の全呼出し・全writerの閉包や、独立した8本のlineageを主張しません。
+
+閉鎖nativeの既存producer ABI26件と追加setter／checkpoint ABI12件、資源・命令資格化99件、Python152件PASS。対象2 readerは131 statements・36 branchesで未通過0です。通常／production fixtureによる同じケースの再評価を合算しません。既存3枠を置換し、hook・読取・保存上限を維持しました。
+
+保持値の意味は未確定です。HCA delay、padding、speaker latencyへの命名や、固定rateでのepoch補完は行っていません。次はbuffer先頭とdecoder論理先頭を同じlifetimeで結びます。外側のmetadata監査Pendingを保持し、28 hook解除・remaining 0・drain・code pin照合と通常終了後の所有配備復元を独立に確認しました。
+
+公開変更は文書のみです。既存498件・142秒Viewer再生・RGB replayは今回未再実行で、各false／Unknown gateと歴史的Pendingを維持します。[保持値入力と残件](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#保持値の実設定入力とconsumerへの限定lineage) を参照してください。
+
 ## buffer消費とcounter writerの同一Song実測
 
 内部sample照会のreaderから上流へ進み、counterを更新するbuffer消費関数と、reset／rate設定の有限範囲を限定しました。保存済み16 snapshotは、累積消費数から保持中の値を差し引いて下限0へclampする式と一致しました。これは前回観測の再評価で、新規16観測とは数えません。

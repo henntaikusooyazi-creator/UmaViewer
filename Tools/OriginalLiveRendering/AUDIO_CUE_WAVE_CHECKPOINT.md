@@ -156,3 +156,29 @@ producerはowner getterと別threadで実行されました。保持frameを実U
 外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を保持します。28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なしと、通常WM_CLOSE後のgame不在・所有配備復元を別に確認しました。StopCompletedや実行時の保持handle復旧成功へ昇格しません。
 
 次の有限対象は、差引かれる保持値の実設定入力と、同じ再生lifetimeのbuffer先頭・decoder論理先頭との対応です。counter更新の再採取を増やすだけではPCM epochが確定しないため、今回限定した設定・変換・消費の境界を起点にします。公開runtimeは変更せず、既存498件・142秒Viewer再生・過去のRGB replayも今回再実行していません。各false／Unknown gateと歴史的Pendingを維持します。
+
+## 保持値の実設定入力とconsumerへの限定lineage
+
+前回限定した保持値設定の上流を、同一buildの保存命令で確認しました。保持値生成にはfloat32乗算が2回あり、現在rate、`held_source_input`、資格化した係数を命令順に評価して整数化します。入力fieldの単位・演出的な意味は確定していません。
+
+追加runでは既存3枠を、buffer consumer、入力setter、保持値書込み後に必ず通る選択calleeへ割り当てました。不要なshader生成採取は外し、全targetの資格化・準備を初回有効化より先に完了させています。hook上限・source graph・既存の読取と保存上限は拡張していません。対象のゲーム／SDK関数を手動で呼び出さず、自然呼出しの元関数を1回実行しています。
+
+| 対象 | 今回の結果 |
+| --- | --- |
+| 実setter引数とfield書込み | 1件、float32 bit一致 |
+| 保持値確定後checkpoint | 1件、現在入力・rateからの限定算術と一致 |
+| consumer記録 | 14件 |
+| fresh資源を保存した記録 | 8/8件資格化。setter・checkpoint各1件、consumer 6件 |
+| 設定入力→保持値→最初の観測consumer | 同じSong・context、前後資源identityと実行順で1本成立 |
+| その他8件 | fresh資源snapshot対象外として保留 |
+| PCM論理先頭・実スピーカー位置・Viewer epoch | 未成立 |
+
+setterとcheckpointでは、型資格化済みの現在AudioManagerとSongをfield読取だけで参照し、実資源の世代を照合しました。checkpointでは親contextと実callee引数のchildを区別して保存しています。開始処理のUnity frameは不明と明示し、音声threadの保持owner frameも実実行frameへ昇格しません。
+
+観測順は、setterの終了、保持値書込み後checkpoint、累積消費数0から始まる最初の観測consumerです。最初のconsumerで累積消費数が進んでも照会counterは0のままで、後続consumerでは同じ保持値を減算した結果へ進みました。観測した保持値は前後で不変です。ただし、未観測のゼロ消費呼出しや全writerの不存在は主張せず、一般的な再生初期化・非単位resampler・seek／pauseへ拡張しません。
+
+閉鎖試験は既存producer ABI26件、追加setter／checkpoint ABI12件、資源・命令資格化99件、Python152件PASSです。新しい保持値readerと固定長wire readerは131 statements・36 branchesで未通過0。これは対象readerのcoverageであり、解析CLIやcollector全体のcoverageではありません。通常fixtureとproduction同一定義fixtureは同じケースの再評価です。
+
+外側は `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を保持します。28 hook解除、remaining 0、drain、code pin照合、読取error／上限到達なし、通常WM_CLOSE後のgame不在と所有配備復元は別に確認しました。StopCompletedや保持handleによる実行時復旧成功には昇格しません。
+
+次の有限対象は、今回のbuffer consumerへ渡されたbuffer先頭とdecoder論理先頭の対応です。保持値をdelay／padding／speaker latencyと呼び替えず、`held_source_input` の無意味名を維持します。通常runtimeの変更、既存498件・142秒Viewer再生・RGB replayの再実行はありません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
