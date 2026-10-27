@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## buffer入力headerと生成側の採取境界
+
+buffer consumerの第5引数は出力先のchannel配列で、消費元はcontextのqueueにある別bufferでした。保存命令からqueue投入・入力bridge・明示copy／processor分岐を限定し、追加runでPCM本文を読まずにbuffer headerを保存しました。16記録はすべてconsumerで、fresh資源付き4件のうち3件は単位step・header進行・累積増分を資格化しました。残る1件は1つのbuffer内に閉じない消費として保留しています。生成側2役割は採用0件で、buffer生成→投入→consumerのlineageは未成立です。
+
+consumerが開始側・後半側の各保存枠を短時間で使い切ることを確認し、総上限を変えずに役割枠を確保する別版を準備しました。これは生成側の条件不足をすべて解消した証拠ではありません。最終の閉鎖試験は既存producer ABI26件、buffer／役割枠22件、資源104件、Python134件PASS。比較readerは114 statements・38 branchesで未通過0です。通常／productionの同じケースは合算しません。
+
+再採取準備後はDMMの自動フォーカスが拒否され、接続待ち上限に達しました。この試行はゲーム起動0・ARM0で、実採取成功へ数えません。採取runのmetadata監査Pendingと、未起動試行の接続待ちPendingを別に保持し、両方の所有配備を復元しました。採取runでは28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なしを確認しています。
+
+公開変更は文書2件のみです。decoder論理先頭、Viewer PCM epoch、同一frame RGBは未成立で、通常runtime・成功ブランチ・既存DLLの未stage削除は保持しました。各false／Unknown gate、過去Pending、未再実行の498件・142秒Viewer再生・RGB replayも維持します。[buffer入力と残件](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#buffer入力headerと生成側の採取境界) を参照してください。
+
 ## 保持値の設定入力からbuffer消費への同一Song接続
 
 追加runで、`held_source_input` の実setter引数、書込み後のfield、保持値確定後のcheckpoint、最初に観測したbuffer consumerを同じSong・資源・contextへ結びました。保持値は現在rateと入力から、限定命令どおりの2回のfloat32乗算・整数化で再計算でき、後続consumerの減算項にも一致しました。保持値確定後のcalleeでの観測であり、設定関数全体の入口／出口traceとは区別します。
