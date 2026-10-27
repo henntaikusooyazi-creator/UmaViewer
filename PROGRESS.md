@@ -4,7 +4,15 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
-## Song cueから参照wave・PCM先頭への限定対応
+## Songの同期時刻・補助値とcached getterの追加照合
+
+自然呼出しの補助値取得境界で、同じSongに属する同期時刻、補助戻り値、実playback識別値を分離して保存しました。typed receiver、直接・親caller、コピーされたSong引数、同じnative playback識別値を照合しています。同期時刻が0の場合の分岐も再計算し、連続境界を満たす次のcached getterとfloat32 bit一致しました。親関数の選択戻り値は、この2入力と保存命令からの再計算であり、今回その戻り値自体を直接採取したとは扱いません。
+
+既存の1 hook枠を置き換え、対象関数の手動呼出しや上限拡大は行っていません。専用native閉鎖試験24件、reader試験49件PASS、reader単体のstatement／branchは100%です。最初の起動はDMMトークン期限切れでARM前に終了し、別runへ分離しました。採取runも外側のmetadata監査によるPendingを保持し、hook解除・drain・code pin照合と通常終了後の所有配備復元を別に確認しています。
+
+実ロード資産hash、再生sample位置、Viewer PCM epoch、同一frame最終RGBは未成立です。公開変更は文書のみで、通常時計・rendererや既存の成功判定を変更していません。詳細は[cue／waveと同期値の記録](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md)を参照してください。
+
+## Song cueから参照wave・PCM先頭への先行照合
 
 保存済みSong観測のCueIdから、選択ACBのSequence／Track／Synthを順方向に辿り、単一waveへの参照を確認しました。ACBが宣言する外部AWBの内容hashとheaderはViewer選択ファイルに一致し、memory側の先読みHCAも外部waveの先頭にbyte一致しました。両者の既存decoderのformat・sample数・論理先頭も一致しています。限定PCM比較区間は無音のため、PCM一致だけを音源識別の証明にはしません。
 
