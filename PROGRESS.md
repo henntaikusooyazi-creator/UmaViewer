@@ -1,8 +1,20 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-27。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-28。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## 同一Songの実queue callerとbuffer消費の対応
+
+固定callerを前提とする旧lineage判定は維持し、別のcaller観測形式で同じSong contextへのqueue投入を最大2件だけ保存しました。追加runで実caller 2件、前後のfresh資源identity、buffer header、実命令のcall境界が一致しました。どちらも従来選択したbridgeの直接callerとは異なり、実ownerとinterface tableも同じSong資源のsnapshotへ対応しています。2つのinterface slotは同じqueue投入関数へ到達します。
+
+保存6記録はqueue投入2件とconsumer 4件。queue 2件とconsumer 3件を資格化し、残るconsumer 1件は単一buffer内に閉じない消費として保留しました。2 bufferについて計3組のqueue→consumer pointer進行を確認しています。同じbufferの複数consumerを、独立した3本の生成元lineageへ数えません。実callerはpoolの指定streamからbufferを取得しますが、そこへ投入するwriterとdecoder論理先頭はまだ未成立です。
+
+producer ABI26件、buffer／caller境界30件、資源104件、Python168件PASS。新readerは63 statements・24 branchesで未通過0。旧形式readerは旧fixture、新形式readerは今回のnative fixtureで検証し、旧判定を緩めていません。新規採取と同じsourceでの閉鎖検証であり、以前の件数へ合算しません。
+
+DMMの初回自動前面化拒否は未完了記録として保持し、既存の明示activateで自動復旧しました。ゲーム起動から再生まで手動前面化0です。外側のmetadata監査Pendingと各false／Unknown gateを保持し、28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元を独立に確認しました。Core保護13件・原作4ファイル・proofの170 source／検証入力はhash不変です。
+
+公開変更は文書2件のみです。通常runtime、成功ブランチ、DLL未stage削除を維持し、既存498件・142秒Viewer再生・RGB replayは再実行していません。[実callerと次のpool境界](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#同一songの実queue-callerと観測bufferの消費) を参照してください。
 
 ## 自動操作の復旧と役割枠を確保したbuffer再採取
 

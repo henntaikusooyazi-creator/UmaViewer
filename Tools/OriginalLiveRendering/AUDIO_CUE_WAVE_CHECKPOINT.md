@@ -231,3 +231,32 @@ DMMツールは入力前のnative前面化要求と有限待機を共通化し�
 外側は `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false`、metadata slot不変条件の不成立を維持します。28 hook解除、remaining 0、drain、code pin照合、読取error／上限到達なし、通常WM_CLOSE後のgame不在・所有配備復元は独立して確認しています。StopCompletedや保持handleによる実行時復旧成功には変更しません。準備後に未起動で終了した前回試行も、今回の実採取へ置換していません。
 
 公開runtimeは変更せず、今回の公開対象は文書2件です。既存498件・142秒Viewer再生・RGB replayは未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 同一Songの実queue callerと観測bufferの消費
+
+前回は固定caller条件を満たすqueue投入の採用が0件でした。今回は旧lineage readerを変更せず、別のcaller観測schemaで、型付きSongの現在識別値と世代照合済みcontextに一致するqueue投入を最大2件保存しました。元関数は1回だけ実行し、PCM本文は取得していません。hook数、source graph、DLL、source保存16件・fresh資源8件、読取とsidecarの上限は維持しています。
+
+| 対象 | 今回の結果 |
+| --- | --- |
+| 保存記録 | queue投入2件、consumer 4件 |
+| 実callerの資格化 | 2/2件。前後の同一Song資源、header、caller命令、call境界が一致 |
+| owner／interface table | 2/2件。保存registerと同じSong資源の前後snapshotに対応 |
+| interface dispatch | 2 slotが同じqueue投入関数へ到達。保存動的値と同一buildの限定命令を照合 |
+| consumerの限定資格化 | 3/4件。残る1件は単一buffer内に閉じない消費として保留 |
+| queue→consumerのpointer進行 | 2 buffer・3組の観測対応 |
+| 選択した旧入力bridge | 自然観測0件。全体での未使用や上流での不関与は未証明 |
+| poolへの生成writer、decoder論理先頭、PCM epoch | 未成立 |
+
+実callerは、前回仮定したbridgeの直接callerとは異なる2関数でした。両者が使うownerは、同じSongのlookupで得られる実資源内のobjectと一致しています。interface tableも動的registerとsnapshotで対応し、そのtableの限定slotとthunkから、今回観測したqueue投入関数へ結びました。新たな同一frameのGPU command生成ownerや音声出力位置を証明したものではありません。
+
+同じbufferに対する複数consumerを独立した生成元観測へ合算しません。確認したのは、queue投入後のnodeと、後続consumerのnode・owner・寸法・残量・channel pointerの進行関係です。全writer閉包、再生の最初のbuffer、decoderの論理sample番号は主張していません。
+
+callerの命令はpoolの指定streamからbufferを取得していました。poolの取り出し・再投入の有限命令も確認しましたが、そのstreamへ実際にbufferを生成して渡したwriterは未観測です。次の有限edgeは、この同じpool／nodeへ投入するwriterとその入力です。古いbridge候補へ無理に当てはめず、実callerで確認したowner・poolの境界から追跡します。counter、rate、HCA既知値によるdecoder原点の逆算は行いません。
+
+閉鎖検証はproducer ABI26件、buffer／caller採用境界30件、資源104件、Python168件PASS。新caller readerの63 statements・24 branchesは未通過0です。旧readerへ新schemaを渡した初回試験は拒否され、形式別fixtureの参照先を分離して再検証しました。旧readerの受入条件を変更して通したものではありません。同じ試験定義・同じ保存観測を別々の独立実測へ加算しません。
+
+今回も初回のDMM自動前面化は拒否されました。この未完了を成功へ変更せず、既存の明示activateで前面化を復旧し、再観測したtokenから操作を続けました。通常ゲーム起動から再生まで7入力、手動前面化0件です。DMM tool sourceの変更や251件の再実行は今回行っていません。
+
+外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持します。28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なし、通常WM_CLOSE後のgame不在と所有配備復元を別に確認しました。Core保護13件・原作4ファイル・proofの170 source／検証入力のhashは不変です。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
+
+公開runtimeは変更せず、文書2件のみを反映しています。既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
