@@ -124,3 +124,35 @@ sample出力の直接readerとrate取得は限定命令で説明できます。�
 最初の閉鎖GPU試験でdisable時のthread集合不安定を検出したため、その失敗を保持し、同じ実行ファイル・判定条件による独立再検証と以後のfocused試験を記録しています。追加callback版の最終native試験も通過しています。私有wireの固定長配置・読取上限を維持し、原作バイナリ／音声本体／鍵／native layout／生のpointer・値を公開していません。
 
 次の有限対象は、今回の実contextでsample counterを更新する処理と、同じ再生lifetimeの論理sample位置です。内部query出力の取得を音声出力callback取得やPCM epoch確定へ拡張せず、原作とViewerの同一frame RGBも未成立のまま保持します。通常runtimeは変更せず、既存498件・142秒Viewer再生・RGB replayも今回再実行していません。
+
+## buffer消費とcounter writerの追加実測
+
+保存された現在interfaceの関数参照から、context生成・rate設定・resetと、buffer消費の限定命令へ追跡しました。選択した連続範囲を棚卸しし、同じcounterへ書く複数の処理を分離しています。全module・全writerの閉包や、実際のconstructor実行を証明するものではありません。
+
+消費関数はchannelごとの4byte単位でbufferを進め、累積数を更新した後、次の関係を照会用counterへ書き込みます。
+
+`counter = max(累積消費数 - 保持中の値, 0)`
+
+保存済み前回runの16 snapshotはこの関係を満たしました。rateを渡す別のsetterは変換stateも更新し、counterのresetには別の分岐があります。保持値には設定経路と後続の更新があり、decoder delay、padding、実スピーカー遅延のどれかへ名前だけで読み替えません。
+
+今回の追加runでは、同じSong・contextを使う自然なproducer呼出しを保存しました。calleeの完全な選択命令と直接参照命令を現在moduleへ照合してから、既存1 hook枠を置き換えています。元関数を1回通常実行し、5引数・実戻り値・現在rate・前後context／資源を保存しました。PCMの内容は採取していません。
+
+| 対象 | 今回の判定 |
+| --- | --- |
+| producerの自然呼出し記録 | 16件 |
+| 同じSongと前後資源を満たす選択記録 | 8/8件 |
+| 戻り値と累積消費数の増分 | 選択8件すべて一致 |
+| 前後の照会用counter算術 | 選択8件すべて一致 |
+| sample-rate変換 | 選択8件は単位stepに限定 |
+| 残る8記録 | fresh資源snapshot対象外として保留 |
+| decoder論理位置・出力buffer・Viewer PCM epoch | 未成立 |
+
+開始側では、消費数が増えても保持値を超えるまでは照会用counterが0となることを実測しました。したがって、同期時刻0、内部counter0、decoder論理位置0は別々の証拠面です。固定rateで割った秒数や、保存されたHCA情報を未確認offsetとして用いる接続は追加していません。
+
+producerはowner getterと別threadで実行されました。保持frameを実Unity frameとして使わず、今回のcounter更新を以前のGPU frameへ結合しません。単位stepの8件を、異なる変換比率・loop・seek・pause・全sourceへ一般化しません。
+
+閉鎖native ABI26ケース、資源／命令資格化89ケース、Python120ケースPASS。通常fixtureとproduction同一定義fixtureの26ケースは独立52件へ合算しません。読取対象3 moduleは185 statements・40 branchesで未通過0。限定PE読取の境界試験も含みますが、解析CLIやnative collector全体のcoverageではありません。5引数のstack転送を検証し、観測側は32bit引数の下位bitを型に沿って保存しています。原作へ渡す引数値の補正はしていません。
+
+外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を保持します。28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なしと、通常WM_CLOSE後のgame不在・所有配備復元を別に確認しました。StopCompletedや実行時の保持handle復旧成功へ昇格しません。
+
+次の有限対象は、差引かれる保持値の実設定入力と、同じ再生lifetimeのbuffer先頭・decoder論理先頭との対応です。counter更新の再採取を増やすだけではPCM epochが確定しないため、今回限定した設定・変換・消費の境界を起点にします。公開runtimeは変更せず、既存498件・142秒Viewer再生・過去のRGB replayも今回再実行していません。各false／Unknown gateと歴史的Pendingを維持します。

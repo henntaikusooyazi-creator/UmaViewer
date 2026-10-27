@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## buffer消費とcounter writerの同一Song実測
+
+内部sample照会のreaderから上流へ進み、counterを更新するbuffer消費関数と、reset／rate設定の有限範囲を限定しました。保存済み16 snapshotは、累積消費数から保持中の値を差し引いて下限0へclampする式と一致しました。これは前回観測の再評価で、新規16観測とは数えません。
+
+追加runでは、対象関数と直接参照命令を実moduleへ照合し、既存1枠を自然な5引数のproducer呼出しへ置換しました。同じSong・contextと前後の資源identityが成立する選択8/8件で、**実戻り値と累積消費数の増分が一致し、前後counterも同じ式に一致**しました。sample-rate変換が単位stepの区間に限る結果で、残る8記録はfresh資源snapshot対象外として保留します。
+
+開始側ではbuffer消費が進んでも照会用counterが0のままになる区間がありました。counterの0をdecoderの論理位置0や実スピーカー出力の先頭へ直接結ぶことはできません。差引く値の設定元、出力buffering、原作とViewerのPCM epochは未成立です。音声側の別threadに保持したowner frameも、実callback時点のUnity frameへ昇格しません。
+
+native ABI26件、資源／命令資格化89件、Python120件PASS。対象3 reader moduleのstatement／branchは100%です。5引数のstack受渡しと元関数1回実行、32bit引数の型に沿った観測、別threadでUnity getterを呼ばない経路を検証しました。通常・production fixtureで同じ26ケースを再評価した結果を合算しません。
+
+外側Pendingとmetadata slot不変条件の不成立を維持し、28 hook解除・remaining 0・drain・code pin照合と、通常WM_CLOSE後の所有配備復元を別に確認しました。公開は文書のみで、既存498件・142秒Viewer再生・RGB replayは未再実行です。[counter writerと残件](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#buffer消費とcounter-writerの追加実測) を参照してください。各false／Unknown gateと歴史的Pendingを維持します。
+
 ## Song資源から内部sample照会callbackへの限定接続
 
 前回のsample export無呼出しを繰り返さず、型付きSongの実playback識別値から、世代を照合するlookup、再生資源、現在のcallback context／関数pointerへ追跡しました。先行runでは保存8件すべてで前後の資源identityとcallback pointerを対応付けました。続く独立runでは、保存pointerのthunk先と直接calleeの命令を起動前に資格化し、既存1枠をその内部callbackの受動観測へ置換しています。
