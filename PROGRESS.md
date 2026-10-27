@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 同一Songのpool writerからqueue・consumerへの接続
+
+poolへbufferを渡す実writerを、同じSong・context・資源世代から限定採取しました。先行runではwriter 2件を資格化しましたが、非単位stepかつ後続queueとは別nodeだったため、writer→queueの成立は0件です。この結果を維持し、総保存数を増やさず、単位stepのwriterが渡した最大2 nodeだけを後続queue・consumerで選ぶ条件へ絞りました。
+
+続くrunでは、**2 bufferそれぞれでpool writer→実queue caller→consumerの順序付き対応が成立**しました。writer 2/2件、queue 2/2件、consumer 2/4件を資格化し、残るconsumer 2件は単一buffer内に閉じない消費として保留しています。node・owner・channel pointerの進行と前後のfresh資源identityが一致しました。writerの実callerが保持するowner・出力nodeも、同じSong資源のsnapshotと2/2件で対応しています。これは再生の最初のbufferやdecoder論理先頭の証明ではありません。
+
+最終sourceの閉鎖検証はproducer ABI26件、buffer／選択・ABI52件、資源105件、Python216件PASS。pool readerは77 statements・34 branchesで未通過0です。同じfixtureの通常／production再評価や、同じbufferの複数消費を独立観測へ加算しません。既存のhook・DLL・読取・保存上限、旧形式readerを維持しています。
+
+未ARMの期限到達run、先行runの非接続結果、UIクライアントの不完全な要求読取を別記録で保持しました。要求は完成後の公開へ修正し、ゲームとcontrollerを維持したまま接続を作り直して採取を完了しています。2採取runの外側metadata監査Pendingは変更せず、28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元を独立確認しました。Core13件・原作4ファイル・各proofのsource hashは不変です。
+
+次の有限edgeは、今回のwriter callerが使う入力interfaceの実table・context・targetと、その状態の進行です。直接calleeとinterface dispatchの限定静的確認を、実decoder identityやPCM epochへ昇格しません。公開は文書2件のみで、通常runtime・成功ブランチ・DLL未stage削除、各false／Unknown gateと過去Pendingを維持します。既存498件・142秒Viewer再生・RGB replayは未再実行です。[pool writerの対応と残件](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#同一songのpool-writerからqueueconsumerへの接続) を参照してください。
+
 ## 同一Songの実queue callerとbuffer消費の対応
 
 固定callerを前提とする旧lineage判定は維持し、別のcaller観測形式で同じSong contextへのqueue投入を最大2件だけ保存しました。追加runで実caller 2件、前後のfresh資源identity、buffer header、実命令のcall境界が一致しました。どちらも従来選択したbridgeの直接callerとは異なり、実ownerとinterface tableも同じSong資源のsnapshotへ対応しています。2つのinterface slotは同じqueue投入関数へ到達します。

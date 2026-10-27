@@ -260,3 +260,29 @@ callerの命令はpoolの指定streamからbufferを取得していました。p
 外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持します。28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なし、通常WM_CLOSE後のgame不在と所有配備復元を別に確認しました。Core保護13件・原作4ファイル・proofの170 source／検証入力のhashは不変です。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
 
 公開runtimeは変更せず、文書2件のみを反映しています。既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 同一Songのpool writerからqueue・consumerへの接続
+
+実queue callerが使用するpoolの指定streamへ、同じSongのbufferを渡すwriterを限定しました。新しいpool観測形式を使い、旧caller／lineage readerの受入条件は変更していません。PCM本文、手動SDK呼出し、原本複製は追加していません。
+
+| 対象 | 今回の結果 |
+| --- | --- |
+| 先行採取 | writer 2件を資格化。ただし非単位stepかつqueueと別nodeで、writer→queueは0件 |
+| 最終採取の保存 | writer 2件・queue 2件・consumer 4件、全8件にfresh資源snapshot |
+| 最終採取の資格化 | writer 2/2件、queue 2/2件、consumer 2/4件 |
+| pool writer→queue→consumer | 2 bufferそれぞれで1本の順序付き対応 |
+| writer callerのowner・出力node | fresh資源、保存register、実call境界と2/2件で対応 |
+| 残るconsumer 2件 | 単一buffer内に閉じない消費として保留 |
+| 最初の再生buffer・decoder論理位置・Viewer PCM epoch | 未成立 |
+
+先行runの結果から、role quotaだけでは同じnodeを追えないことが分かりました。最終版では単位stepのwriterを最大2件保存し、そのnode・Song識別値・pool・contextが一致するqueueだけを採用します。consumerも、保存queueへ実際に渡された同じnodeだけを対象とします。前後snapshot、実caller、buffer header、pointer進行の資格化は別途維持し、選択されたことだけを成功にしません。総保存16件、fresh資源8件、hook数、読取とsidecarの上限は維持しています。
+
+2つの接続は、各bufferのwriter出力nodeが後続のqueueとconsumerへ渡る対応です。poolの全履歴、未観測writerの不存在、再生先頭のbuffer、decoderのsample番号を証明するものではありません。writerの実callerには入力側の処理があり、直接calleeとinterface dispatchを限定静的確認しましたが、実際の入力interface／table／context／targetとdecoder状態はまだ未採取です。次はこの実ownerに属する入力経路だけを資格化します。counter、rate、HCA既知値から位置を逆算しません。
+
+閉鎖nativeはproducer ABI26件、buffer／選択・ABI52件、資源105件、Python216件PASS。pool readerの77 statements・34 branchesは未通過0です。これは対象readerのcoverageであり、collector全体やdecoder全体の証明ではありません。同じ定義の通常／production fixtureを二重計上しません。collector source graphとDLLサイズ、元関数1回実行・ABI・environment復元を既存上限内で確認しています。
+
+未ARMで既存待機期限へ達した試行は、ARM0のまま別記録に残しました。最終runのUIクライアントでは、要求ファイルが完成する前に読まれる競合を確認し、完成した要求のrename公開へ修正しています。新規stdio接続へ切り替え、同じゲーム・controllerで続行しました。入力期限やowner照合、採取deadlineを緩めていません。手動前面化は0件です。誤ったclose引数のschema拒否も成功へ置換せず、正しいexpected identityを使ったWM_CLOSEとgame不在を確認しました。
+
+2採取runは外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持します。28 hook解除、remaining 0、drain、code pin照合、読取error／上限到達なし、通常終了後のgame不在・所有配備復元は別に確認しました。未ARM試行も配備復元済みです。Core保護13件、原作4ファイル、採取前proofのsource／検証入力は各runでhash不変です。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
+
+公開変更は文書2件のみです。private source、採取値、pointer・命令・native layout、UI画像はローカルの再評価可能な証拠として保持し、公開しません。通常runtime、成功ブランチ、DLL未stage削除は維持し、既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
