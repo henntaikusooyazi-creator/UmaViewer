@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 自動操作の復旧と役割枠を確保したbuffer再採取
+
+DMM操作ツールの入力前面化を既存native要求へ接続し、実foregroundと同一window identityを再確認する経路へ修正しました。ローカルtoolの全251件PASSと、別windowが前面にある状態からの独立した2回のnavigationを確認しています。旧MCP接続は切断状態を保持しており、修正版の新規stdio接続を使いました。今回の再採取ではランチャーからゲーム起動、楽曲選択、再生確認まで7回の入力を自動実行し、手動の前面化は使用していません。tool sourceや設定を本repositoryへ持ち込んでいません。
+
+役割別の保存枠を確保した版で、同じSongのfresh資源とbuffer headerを持つconsumer 2件を資格化しました。queue投入候補の関数には自然呼出しがありましたが、固定callerなどを含む採用条件を通る記録は0件です。入力bridgeは観測0件で、生成→投入→consumerのlineageは未成立です。consumerの枠占有だけが原因だったとは扱いません。
+
+閉鎖試験は既存producer ABI26件、buffer／役割枠22件、資源104件、Python134件PASS。buffer readerの114 statements・38 branchesは未通過0です。これらは同じ試験定義の再実行で、前回件数へ加算しません。外側のmetadata監査Pending、28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元を分離して保持しました。
+
+次は同じSongのqueue投入で実際に通るcallerと、入力bridge候補の適用範囲を限定します。PCM本文・decoder論理先頭・Viewer epochは取得成立へ補完していません。公開変更は文書2件で、既存498件・142秒Viewer再生・RGB replayは未再実行です。各false／Unknown gate、過去Pending、成功ブランチとDLLの未stage削除を維持します。[再採取の境界](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#自動操作復旧後のbuffer再採取) を参照してください。
+
 ## buffer入力headerと生成側の採取境界
 
 buffer consumerの第5引数は出力先のchannel配列で、消費元はcontextのqueueにある別bufferでした。保存命令からqueue投入・入力bridge・明示copy／processor分岐を限定し、追加runでPCM本文を読まずにbuffer headerを保存しました。16記録はすべてconsumerで、fresh資源付き4件のうち3件は単位step・header進行・累積増分を資格化しました。残る1件は1つのbuffer内に閉じない消費として保留しています。生成側2役割は採用0件で、buffer生成→投入→consumerのlineageは未成立です。

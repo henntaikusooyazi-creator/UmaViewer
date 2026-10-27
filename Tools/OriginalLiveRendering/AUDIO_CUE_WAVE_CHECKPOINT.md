@@ -207,3 +207,27 @@ consumerの第5引数は出力先のchannel配列でした。実際の消費元�
 再採取の準備後、DMMの自動フォーカスが拒否され、原作接続待ちの既存上限に達しました。この試行はゲーム起動0・ARM0で、原作採取や生成側lineageの成功ではありません。未起動の接続待ちPendingと、採取runの `PendingManualRecovery / observation_flags` を分けて保持しました。採取runは `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持し、28 hook解除・remaining 0・drain・code pin照合・読取error／上限到達なしを別に確認しています。通常WM_CLOSE後のgame不在と、未起動試行のgame不在をそれぞれ確認し、所有配備を復元しました。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
 
 次の有限対象は、役割枠を確保した採取版で同じSongの入力bridge・実queue投入・consumerを結び、実callerからbuffer生成元を限定することです。decoder論理位置は直接の状態・pointer・資源世代・実行順で結び、counter、rate、HCA既知値から逆算しません。公開runtime変更、498件・142秒Viewer再生・RGB replayの再実行はありません。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 自動操作復旧後のbuffer再採取
+
+DMMツールは入力前のnative前面化要求と有限待機を共通化しました。APIの成功だけでは入力を許可せず、実foreground、HWND／PID／生成時刻、geometryを再照合します。既存のdesktop・integrity・署名・観測期限・単回token・遮蔽確認は維持し、背景への直接入力や補助キー送出、security設定変更は追加していません。ローカルtoolの251件PASSと、背面のDMMを自動前面化してnavigationした2件を確認しました。旧接続は切断状態のまま、新規stdio接続で修正版を使用しています。
+
+この接続からランチャーを操作し、ゲーム起動、今回起動したownerの採取前照合、楽曲選択、再生確認、一度だけのARM、native準備完了後の再生まで進めました。DMM／ゲームへの入力は計7件で、手動前面化は0件です。UI画像は専用private rootの既存容量上限内に保持し、アカウント表示やraw採取値は公開していません。
+
+| 対象 | 今回の結果 |
+| --- | --- |
+| consumerの保存・資格化 | 同じSongのfresh資源とheaderを持つ2件 |
+| queue投入候補の自然呼出し | 観測あり。ただし採用条件を通る記録は0件 |
+| 選択した入力bridgeの自然呼出し | 観測0件 |
+| 入力bridge→queue投入→consumer | 未成立 |
+| decoder論理先頭・Viewer PCM epoch | 未成立 |
+
+役割別quotaによってconsumerの先行占有は抑制されましたが、生成側の結合は成立していません。関数呼出し数はcaller・Song結合などの採用判定より前の値であり、対象Songの独立観測数ではありません。bridgeの観測0件も原作全体での未使用証明ではありません。group判定の拒否数だけから、先行するcaller条件やcontext条件を通過したと推定しません。
+
+次の有限edgeは、今回のSong contextへ入るqueue投入の実callerを資格化し、静的bridge候補がその入力経路に該当するかを確認することです。未知callerを既知bridgeへ読み替えず、実module・call境界・資源世代・順序に沿って扱います。PCM本文の採取やconsumer数の増加だけでepochを補完しません。
+
+同じ最終sourceでproducer ABI26件、buffer／役割枠22件、資源104件、Python134件PASS。対象buffer readerの114 statements・38 branchesは未通過0です。通常／production fixtureや前回の同一定義再実行を独立件数へ加算しません。Core保護13件、原作4ファイル、採取前proofの168 source／検証入力のhash不変を確認しました。
+
+外側は `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false`、metadata slot不変条件の不成立を維持します。28 hook解除、remaining 0、drain、code pin照合、読取error／上限到達なし、通常WM_CLOSE後のgame不在・所有配備復元は独立して確認しています。StopCompletedや保持handleによる実行時復旧成功には変更しません。準備後に未起動で終了した前回試行も、今回の実採取へ置換していません。
+
+公開runtimeは変更せず、今回の公開対象は文書2件です。既存498件・142秒Viewer再生・RGB replayは未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
