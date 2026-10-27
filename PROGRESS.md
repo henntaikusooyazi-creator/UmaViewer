@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 同一Songのdecoder状態・出力先からwriter・consumerへの接続
+
+writer ownerの現在の入力interface・context・targetを2/2件資格化し、先行runの2 bufferのwriter→queue→consumerへ対応付けました。この段階のtargetは現在値のsnapshotであり、interface関数入口の実呼出しtraceとは区別しています。
+
+そのcontextが保持するdecoderと自然実行された出力producerを、追加runで直接結合しました。**decoder 2/2件、writer 2/2件、consumer 2/4件を資格化し、同じ1 bufferの連続する2出力範囲についてdecoder→writer→consumerが成立**しました。両channelの範囲・offset、呼出し順、thread、Song・context・資源世代とdecoder状態の進行を照合しています。同じbufferを共有する2対応を、独立した2本の生成lineageへ数えません。今回queueの観測slotをdecoderへ置換しており、過去のqueue証拠も同一runへ混ぜません。
+
+先行版のcallsiteはskip／末尾側で、decoder採用0件でした。通常分岐を限定静的確認し、そのcallsiteだけを採用する版へ修正しました。旧0件の結果を保持し、対象を無制限に拡大していません。最終sourceはproducer ABI26件・legacy buffer67件・decoder-mode28件・資源107件・Python297件PASS。decoder readerの49 statements・18 branchesは未通過0です。legacy試験を新decoder-modeの実行証明へ読み替えません。
+
+日付変更と重なったowner待機期限の試行、DMM token期限切れ・再起動による未ARM試行、配備前backup不足と修復も別記録に残しました。再生操作後の本編開始を確認して再試行しています。採取に到達したrunの外側metadata監査Pendingとbodyの `complete/pins_ok=false` を維持し、28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元を独立確認しました。Core13件・原作4ファイル・最終proof191件はhash不変です。保存先を変え、元の一時ファイル・ゲーム原本へのreadを拒否した再評価でも同じ接続結果を再現しました。
+
+今回確定したのはdecoder状態と出力先の対応です。再生最初のbuffer、decoderの絶対sample原点、PCM本文一致、実音声出力位置、Viewer PCM epochは未成立です。公開は文書2件のみで、既存498件・142秒Viewer再生・RGB replayは未再実行です。通常runtime、成功ブランチ、DLL未stage削除、各false／Unknown gateと過去Pendingを維持します。[decoder接続の範囲と次のedge](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#同一songのdecoder状態と出力先の限定接続) を参照してください。
+
 ## 同一Songのpool writerからqueue・consumerへの接続
 
 poolへbufferを渡す実writerを、同じSong・context・資源世代から限定採取しました。先行runではwriter 2件を資格化しましたが、非単位stepかつ後続queueとは別nodeだったため、writer→queueの成立は0件です。この結果を維持し、総保存数を増やさず、単位stepのwriterが渡した最大2 nodeだけを後続queue・consumerで選ぶ条件へ絞りました。

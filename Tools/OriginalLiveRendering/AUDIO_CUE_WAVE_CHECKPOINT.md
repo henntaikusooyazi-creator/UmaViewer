@@ -286,3 +286,34 @@ callerの命令はpoolの指定streamからbufferを取得していました。p
 2採取runは外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を維持します。28 hook解除、remaining 0、drain、code pin照合、読取error／上限到達なし、通常終了後のgame不在・所有配備復元は別に確認しました。未ARM試行も配備復元済みです。Core保護13件、原作4ファイル、採取前proofのsource／検証入力は各runでhash不変です。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
 
 公開変更は文書2件のみです。private source、採取値、pointer・命令・native layout、UI画像はローカルの再評価可能な証拠として保持し、公開しません。通常runtime、成功ブランチ、DLL未stage削除は維持し、既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 同一Songのdecoder状態と出力先の限定接続
+
+pool writerの実ownerが保持する入力interface・table・context・targetを、同じSong資源の前後snapshotと2/2件で照合しました。そのtargetの実prefixと同一buildの限定命令を確認しています。これはcurrent targetの資格化であり、そのinterface関数入口を観測した同一call traceとは区別します。先行runの2 bufferについて、入力snapshotから既存writer→queue→consumerへの対応が成立しました。
+
+限定命令から直接到達するdecoder出力producerを、既存queue観測slotへ明示的に置換しました。引数・実戻り値・environmentを保持し、元関数を自然呼出しで1回だけ実行します。PCM本文、手動SDK呼出し、原本複製は追加していません。先行版はskip／末尾側のcallsiteを選んでおり、writerとconsumerは取得できてもdecoder採用は0件でした。この結果を残し、通常分岐のcallsiteを同一buildの命令で資格化し直しました。修正版はそのcallsiteだけを採用し、他のcallsiteを拒否するnative／Python試験も追加しています。
+
+| 対象 | 最終runの結果 |
+| --- | --- |
+| 保存記録 | decoder 2件、pool writer 2件、consumer 4件 |
+| 限定資格化 | decoder 2/2件、writer 2/2件、consumer 2/4件 |
+| 現在の入力context→decoder | 同じSong資源・component・interface contextの保持handleと実引数を照合 |
+| decoder状態 | 連続2呼出しの状態進行を直接確認。絶対sample番号とは扱わない |
+| decoder出力範囲→writer→consumer | 2対応。両者は同じ1 bufferを共有し、独立bufferは1件 |
+| writer→consumer | 2 bufferで対応。ただしdecoderとの対応があるのはうち1 buffer |
+| 残るconsumer 2件 | 単一buffer内に閉じない消費として保留 |
+| 再生先頭・decoder絶対sample原点・Viewer PCM epoch | 未成立 |
+
+decoderでは、実引数のhandleが現在の入力contextに保持される実体と一致することを確認しました。出力channel配列が示す範囲は後続writerのbuffer内に閉じ、両channelのoffsetが一致しています。同じthread、実行順、Song識別値・context・資源世代の前後一致も必要条件としています。明示trim／skipと単位stepの条件を満たした観測だけを使い、counter・rate・既知HCA値から位置を逆算していません。
+
+2回のdecoder出力が同じbufferへ入るため、2組の接続を独立した2本の生成lineageとして数えません。queue観測slotはdecoderへ置換しているので、今回decoderからqueue呼出しまで同時にtraceしたという主張もしません。先行runのqueue証拠は別runの限定証拠として保持します。PCM内容、全writer閉包、実スピーカー出力位置、Unity frameとの対応を証明するものではありません。
+
+最終sourceの閉鎖検証はproducer ABI26件、legacy buffer67件、decoder-mode28件、資源107件、Python297件PASS。RuffもPASSし、decoder readerの49 statements・18 branchesは未通過0です。legacy67件をdecoder-mode試験とは記載せず、同じ通常／production fixtureや保存観測の再評価を二重計上しません。既存のhook数、source graph、DLLサイズ、source／fresh資源、読取・sidecarの上限を維持しています。
+
+未ARM試行のtoken期限切れ・再起動、日付変更と重なったowner待機期限、配備前backup不足による拒否、native fixture生成完了前にPython試験を開始した失敗も記録しました。配備前の拒否には所有配備の変更がなく、既存owned backupのhash照合後に同じ生存controllerへ配備を再開しています。依存fixtureの生成完了を待ち、Ruff→関連pytestを直列で再実行しました。再試行では再生操作直後の本編開始を確認し、PID・birth・run IDを混ぜていません。
+
+採取に到達したrunは外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false` とmetadata slot不変条件の不成立を保持します。最終runの28 hook解除・remaining 0・drain・runtime／GPU code pin照合・読取error／上限到達なし、通常WM_CLOSE後のgame process／window不在・所有配備復元は別に成立しました。owner待機期限の試行では初期5 hookだけが有効で、その5件の解除を別に確認しています。いずれもStopCompletedや保持handleによる実行時復旧成功へ変更しません。Core保護13件・原作4ファイル・最終proof191 source／検証入力のhashは不変です。
+
+証拠・source・再現手順は上限付きのdurable manifestへ保存しました。全archive hashを検査し、元の一時ファイル・ゲーム原本へのreadを拒否した状態でも、入力snapshotと最終decoder接続の同じ判定を再現しています。private値・命令・native layout・UI画像は公開していません。
+
+次の有限edgeは、直接観測したdecoder状態と出力範囲を、符号化block位置と明示初期化／範囲設定へ結ぶことです。phaseの進行を絶対sample原点へ読み替えず、再生最初のbufferやPCM epochはUnknownのまま扱います。公開変更は文書2件のみで、通常runtime、成功ブランチ、DLL未stage削除を維持します。既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
