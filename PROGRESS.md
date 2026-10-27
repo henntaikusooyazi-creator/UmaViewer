@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## decoder初期化から明示rangeと符号化block入力への限定接続
+
+再生前からの有限採取で、**header初期化1/1件・明示range設定1/1件・block入力4/4件がstrict readerを通過**しました。同じSong・資源世代・入力context・decoder handle・threadと実caller、前後snapshot、呼出し順を照合し、初期化→range→4 block入力を1本のlifetimeへ対応付けています。header入力6成分の格納と、rangeの実2引数からdecoder状態への書込みも一致しました。保存したloop末尾値と限定命令を使う非正loop長の範囲では、range引数を再計算して一致しています。
+
+header入力span内で位置を対応付けられたblockは最初の1件だけです。残る3件のheader相対番号、符号化bufferのwriter／版、元資産内の絶対位置、Viewer PCM epochは未成立です。以前のdecoder出力→writer→consumerは別runの証拠として保持し、今回の初期化からconsumerまで同一runで閉じたとは扱いません。
+
+先行run54は対象外blockによる早期候補枯渇で採用0、run55は保存6件のpadding不正で旧readerが拒否しました。両結果を残し、同じhandleの初期化・range後だけblock候補へ進める条件と、記録全byteの明示初期化を追加しました。保存rawの補正、readerの緩和、上限増加は行っていません。旧CPUモデルの条件外判定も維持し、観測済み入力による限定再評価を別に記録しています。前回trimと呼んだcomponent値は意味未確定へ訂正し、decoderのskipと既存pointer対応を区別しました。
+
+最終sourceの閉鎖検証はorigin-mode56件・資源107件・事前Python342件PASS。origin readerの115 statements／40 branchesは未通過0です。保存後の限定lineage／range再評価23件もPASSし、58 statements／22 branchesは未通過0です。legacy producer26件・buffer67件・decoder-mode28件は独立カテゴリです。元temp・ゲーム原本へのreadを拒否したdurable replayでも同じ結果を再現しました。
+
+3 runの外側metadata監査Pendingと `complete/pins_ok=false` を保持し、28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元を独立確認しました。最終runのCore13件・原作4ファイル・preflight201 source／検証入力はhash不変です。公開は文書2件のみで、通常runtime、成功ブランチ、DLL未stage削除、各false／Unknown gateと過去Pendingを維持します。既存498件・142秒Viewer再生・RGB比較は未再実行です。[初期化とblock入力の範囲](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#decoder初期化から明示rangeと符号化block入力への限定接続)を参照してください。
+
 ## 同一Songのdecoder状態・出力先からwriter・consumerへの接続
 
 writer ownerの現在の入力interface・context・targetを2/2件資格化し、先行runの2 bufferのwriter→queue→consumerへ対応付けました。この段階のtargetは現在値のsnapshotであり、interface関数入口の実呼出しtraceとは区別しています。

@@ -304,7 +304,9 @@ pool writerの実ownerが保持する入力interface・table・context・target�
 | 残るconsumer 2件 | 単一buffer内に閉じない消費として保留 |
 | 再生先頭・decoder絶対sample原点・Viewer PCM epoch | 未成立 |
 
-decoderでは、実引数のhandleが現在の入力contextに保持される実体と一致することを確認しました。出力channel配列が示す範囲は後続writerのbuffer内に閉じ、両channelのoffsetが一致しています。同じthread、実行順、Song識別値・context・資源世代の前後一致も必要条件としています。明示trim／skipと単位stepの条件を満たした観測だけを使い、counter・rate・既知HCA値から位置を逆算していません。
+decoderでは、実引数のhandleが現在の入力contextに保持される実体と一致することを確認しました。出力channel配列が示す範囲は後続writerのbuffer内に閉じ、両channelのoffsetが一致しています。同じthread、実行順、Song識別値・context・資源世代の前後一致も必要条件としています。decoderのskip、意味未確定のcomponent選択値、単位stepの条件を区別し、counter・rate・既知HCA値から位置を逆算していません。
+
+追補訂正：当初trimと呼んだcomponent選択値の意味付けは未成立でした。同じ数値変位を含む命令はstack引数の参照であり、そのcomponent値と同じものとは証明できません。旧観測値・pin済みsourceを保持して意味未確定へ戻します。実際に取得したdecoderのskip、および出力範囲からwriter／consumerへのpointer対応は別証拠として維持します。
 
 2回のdecoder出力が同じbufferへ入るため、2組の接続を独立した2本の生成lineageとして数えません。queue観測slotはdecoderへ置換しているので、今回decoderからqueue呼出しまで同時にtraceしたという主張もしません。先行runのqueue証拠は別runの限定証拠として保持します。PCM内容、全writer閉包、実スピーカー出力位置、Unity frameとの対応を証明するものではありません。
 
@@ -317,3 +319,34 @@ decoderでは、実引数のhandleが現在の入力contextに保持される実
 証拠・source・再現手順は上限付きのdurable manifestへ保存しました。全archive hashを検査し、元の一時ファイル・ゲーム原本へのreadを拒否した状態でも、入力snapshotと最終decoder接続の同じ判定を再現しています。private値・命令・native layout・UI画像は公開していません。
 
 次の有限edgeは、直接観測したdecoder状態と出力範囲を、符号化block位置と明示初期化／範囲設定へ結ぶことです。phaseの進行を絶対sample原点へ読み替えず、再生最初のbufferやPCM epochはUnknownのまま扱います。公開変更は文書2件のみで、通常runtime、成功ブランチ、DLL未stage削除を維持します。既存498件・142秒Viewer再生・RGB replayは今回未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## decoder初期化から明示rangeと符号化block入力への限定接続
+
+前回の日付変更と重なった試行を置換せず、新run ID・PID・birth・controllerで再試行しました。再生確認画面を確認し、再生前のARMとhook準備のreceiptが成立してから本編を開始しています。手動SDK呼出し、PCM本文、原本コピーは追加していません。
+
+| 対象 | 最終runの結果 |
+| --- | --- |
+| strict readerによる採用 | header初期化1/1件・range1/1件・block4/4件。拒否0件 |
+| 同じ実体への対応 | Song・資源世代・component／interface／入力context・decoder handle・thread、前後snapshotが一致 |
+| 初期化入力 | headerの実6成分が現在decoderのmetadataへ一致 |
+| range入力 | 実2引数と実decoder状態への書込みが一致 |
+| 順序付き対応 | 初期化→range→4 block入力。1本のlifetimeであり、独立した4原点ではない |
+| rangeの限定再計算 | 保存したloop末尾値と実caller contextを要求し、非正loop長の観測入力から実引数を再現 |
+| header相対block位置 | 最初の1件のみ保存header入力span内で候補を対応。残る3件はUnknown |
+| 絶対sample原点・元資産位置・Viewer PCM epoch | 未成立 |
+
+今回のrange再計算は、事前モデルの条件を広げて旧判定を書き換えたものではありません。旧モデルは条件外のまま保持しています。strict readerを通った実引数・実書込みの対応と、保存済みloop末尾値を加えた限定CPU再評価を別に記録しました。positive loop経路や一般的な初期化規則へ拡張せず、counter・rateからsample位置を逆算していません。
+
+最初のblockは保存されたheader入力span内でheader直後と整合しました。ただし、pointer範囲の対応だけでは符号化bufferのwriter・lifetime・版や、元資産の絶対block番号は確定しません。4件はblock入力の自然呼出しであり、4個の独立したPCM出力bufferではありません。前回のdecoder出力→pool writer→consumerは別runの限定証拠として保持し、今回同時に閉じたlineageへ混ぜません。音声出力位置、音声と描画の同一frame、Viewer PCM epochも未証明です。
+
+先行run54は初期化前の対象外blockが候補上限を使い切り、採用0件でした。同一handleの初期化とrange確定後だけblockを候補へ進める条件に修正し、上限と資源照合を維持しています。run55は6記録を保存したものの、4記録のalignment paddingにより旧readerが拒否しました。生記録をゼロ補正せず拒否結果を保持し、origin記録の全byteを明示初期化する修正とfixtureを追加して再採取しました。旧padding検査、wire、hook数・DLLサイズ・source graph・候補／保存／読取の上限は維持しています。
+
+解析用cloneの相対run名残留とselected JSON不足も検出しました。新run IDを明示検証し、配備前に必要な入力を確認する手順へ修正しています。別runの保存値を現在の結果へ混ぜていません。失敗・修正・再発防止は私有checkpointへ残しました。
+
+最終sourceの閉鎖検証はorigin-mode56件・資源107件・事前Python342件PASS。origin readerの115 statements・40 branchesは未通過0です。保存後の限定lineage／range再評価23件もPASSし、58 statements・22 branchesは未通過0です。Ruff PASS。legacy producer ABI26件・buffer67件・decoder-mode28件は独立したカテゴリとして保持し、同じfixtureの通常／production再評価を二重計上しません。
+
+3 runの外側 `PendingManualRecovery / observation_flags`、bodyの `complete/pins_ok=false`、metadata slot不変条件の不成立は維持します。28 hook解除・remaining 0・drain・runtime／GPU code pin照合、read error／上限到達なし、通常WM_CLOSE後のprocess／window不在・所有配備復元は独立確認しました。StopCompletedや保持handleによる実行時復旧成功へ変更しません。Core13件・原作4ファイル・最終preflight201 source／検証入力はhash不変です。
+
+source・証拠・再現手順は上限付きdurable manifestへ保存し、全archive hashを確認しました。元temp・ゲーム原本へのreadを拒否した再評価で、先行失敗の拒否結果と最終6記録・順序付き対応・限定range再計算を再現しています。private値・命令・layout・UI画像は公開していません。
+
+次の有限edgeは、最初の符号化入力bufferのwriter／版と元資産範囲への直接対応です。header相対の候補を絶対sample原点へ読み替えません。公開は2文書のみで、通常runtime・成功ブランチ・DLL未stage削除を維持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
