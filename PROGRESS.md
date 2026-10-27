@@ -4,6 +4,14 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## Song cueから参照wave・PCM先頭への限定対応
+
+保存済みSong観測のCueIdから、選択ACBのSequence／Track／Synthを順方向に辿り、単一waveへの参照を確認しました。ACBが宣言する外部AWBの内容hashとheaderはViewer選択ファイルに一致し、memory側の先読みHCAも外部waveの先頭にbyte一致しました。両者の既存decoderのformat・sample数・論理先頭も一致しています。限定PCM比較区間は無音のため、PCM一致だけを音源識別の証明にはしません。
+
+実戻り値を以前保存したSong時刻関数について、直接calleeが指定するAPI名は `GetTimeSyncedWithAudio` と限定静的確認しました。別のBGM経路とは分離し、同期時刻が0のときの補助parameter分岐も保持しています。原作の実ロード資産hash、native同期時刻と再生sample位置の同一playback join、ViewerのPCM epoch、同一frame最終RGBは未成立です。[cue／wave対応記録](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md) に根拠と境界を記載しています。
+
+追加原作run・Unity再生は0件、私有の人工route／文字列試験45件PASSです。公開変更は文書のみで、通常時計・rendererは変更していません。既存498件・142秒再生・過去のRGB一致を新しい成功件数へ加算せず、false／Unknown判定と過去Pendingを維持します。
+
 ## 楽曲時刻writerと時計getterの限定引継ぎ
 
 原作の実Updateから、楽曲用playbackの整数戻り値をfloat32へ変換し、秒へ換算してcached時刻へ直接書く経路を限定しました。隣接するBGM用playbackとは区別します。通常setterを観測しても呼出しがなかったため、同じ採取を繰り返さず、実metadataと保存命令から直接書込みへ追跡しました。
