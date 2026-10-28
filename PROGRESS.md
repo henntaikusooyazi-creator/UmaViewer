@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 資産のencoded blockと同一decoderの論理sample座標
+
+run71では、同じSong・資源世代・decoder handleの初期化、明示range設定、source seed、自然read要求、queue投入、input pool書込み、pool取得、primary block消費を8記録で保存しました。block前後と直後のlocal output前後も限定保存し、**資産上の単一HCA block位置と、同じdecoderの実range残量から得た論理sample位置が1点で一致**しました。直後の実出力数と残量減少も一致しています。過去runの別buffer・consumer記録は結合していません。
+
+旧primary readerは6記録を採用する一方、source完了からpool書込みまでのresampler step変化によりlineage 0を保持します。別の符号化byte専用判定で、step変化を明示し、他の資源識別・packet版・node・pointer・容量・実行順と既存の個別採用条件を要求して1本を接続しました。sample単位の連続性を緩和したものではありません。decoder座標は、その後の実初期化・range・current stateから独立に照合し、consumer counter・rate・held値から補完していません。
+
+最初のoutputモデルは状態番号の進行を誤り拒否されました。旧結果を残し、直接calleeの完全関数で二段階の更新を確認した別moduleで修正しています。追加native閉鎖28件、事前Python661件、採取後のbyte／state試験49件、資源107件がPASS。採取後2 moduleの67 statements・4 branchesは未通過0、Ruff PASSです。旧モデルの人工試験を実測一致へ読み替えず、orchestration全体のcoverageとは区別します。
+
+凍結保存後、元temp・原作・Core原本・媒体readを禁止した別rootの再評価でも、旧lineage 0と新しい限定接続・座標一致を再現しました。hook・source graph・DLL・読取り・保存上限は維持。外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` のままです。28 hook解除・remaining 0・drain・code pins、通常WM_CLOSE後の不在と所有配備復元、Core13・原作4・事前proof286 source／検証入力のhash不変を別に確認しました。
+
+公開は文書2件のみ。通常runtime・成功ブランチ・DLL未stage削除を保持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。成立は1 blockのdecoder-local座標であり、全writer閉包、実speaker位置、Viewer PCM epoch、同一frame自然RGBには昇格しません。次はこの座標を同じ出力bufferのwriter・queue・consumerへ伝える境界です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。[限定範囲と再評価](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#資産のencoded-blockと同一decoderの論理sample座標)を参照してください。
+
 ## 同じファイル位置付きpacketからpool取得とdecoder消費への接続
 
 run70では本編Songのseed・自然read要求・source queue投入・input pool書込み・pool取得・decoder入力を各1件、計6記録で保存しました。同じSong・資源世代・packet版・pool・node・入力pointerと実caller、前後snapshot、実行順を照合し、**要求→queue投入→書込み→取得→decoder消費が同一runの1packetで成立**しています。過去runの別bufferを接続へ流用していません。

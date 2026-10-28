@@ -1,5 +1,33 @@
 # Song cueからwave・PCM先頭への限定対応
 
+## 資産のencoded blockと同一decoderの論理sample座標
+
+run71は、前回のファイル位置付きpacketとdecoder入力の接続に、同じdecoderの初期化・明示range設定・current stateを追加した有限採取です。初期化1件、range設定1件、source seedとread要求・完了queue投入・input pool書込み・pool取得・block消費を各1件、計8記録を保存しました。block前後と、その直後に自然実行されたlocal output前後のstateは、主記録とは別の2組として保持しています。8本の独立lineageや別bufferとは数えません。
+
+同じSong・資源世代・decoder handle・component・thread・実caller・実行順を要求し、初期化入力と実header格納、rangeの実引数と書込みを照合しました。loader保持pathの現ファイル内容hashと、変更していないCore readerのWave範囲も再照合しています。同じpacketのprimary消費は資産上の単一HCA blockに対応し、実在する第2入力のpointerと長さは保持したまま、その消費がprimary内で完結する条件を要求しました。
+
+このblockの資産内座標と、実初期range・要求位置・block直前の残量から独立に得たdecoder論理sample位置が一致しました。直後outputの実出力数と残量減少も一致し、scratchのidentityと容量、skip、前後headerの対応も確認しています。consumer counter、rate、held値から不足位置を逆算していません。資産headerのdelay情報は同じdecoderの実初期化と別に照合しており、speaker latencyや任意の時刻補正として扱いません。
+
+### 旧拒否と今回の限定判定
+
+旧primary readerは個別6記録を採用しましたが、source完了からpool書込みまでにresampler stepが変化したため、結合は0件です。旧reader・結果・capture前proof sourceは変更していません。別のbyte専用判定では、そのstep変化を明示し、他の資源識別、packet版、node、pointer、byte範囲、容量、実行順と元の個別採用条件を要求して1本を接続しています。この判定は符号化byteの輸送だけに使用し、resamplerを跨いだ再生sample連続性には使用しません。decoderの座標照合は実range/current stateを使う別の検査です。
+
+最初のstateモデルではoutput後の状態番号を一段階だけ進めたため、実測との比較が拒否されました。旧失敗logを保持し、直接calleeの完全関数を限定確認すると、block処理とsubblock処理の両方に更新がありました。capture後の別moduleでモデルを訂正し、誤った一段階モデルを拒否する試験も追加しました。保存rawを補正したり、capture前moduleの人工成功を実測一致へ読み替えたりしていません。準備時のファイル名不一致とcompile時の変数shadowingも起動前に修正し、追加の原作runは増やしていません。
+
+### 検証と保全
+
+追加native state ABI・admissionの閉鎖28件、事前Python661件、採取後byte／stateの49件、資源107件がPASSしました。採取後2 moduleの67 statements・4 branchesは未通過0、Ruff PASSです。継承chain・queue・origin・decoder等は別カテゴリで保持し、通常／production同一定義の同一ケースや同じ原作観測の再評価を二重計上しません。reader orchestration、CLI、native collector全体のcoverageではありません。
+
+保存は主記録8件・state対2組で閉鎖しました。hook総数、source graph、fresh資源、DLL、共有読取りの既存上限は維持し、追加SDK／ゲーム関数の手動呼出しやPCM本文採取は行っていません。凍結archiveの全hashを照合し、凍結した依存だけを明示ロードする別rootのreplayで、元temp・原作・Core原本・媒体readを禁止して旧拒否と新しい限定一致を再現しました。
+
+外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` を維持します。28 hook解除、remaining 0、drain、runtime/GPU code pinsと、通常WM_CLOSE後のprocess不在、所有配備・metadata復元を別に確認しました。Core13件・原作4ファイル・capture前proof286 source／検証入力のhashは不変です。保存観測の成功をStopCompletedや実行時held handle復旧へ昇格しません。
+
+### 残る境界
+
+成立は単一blockのdecoder-local座標と直後の有限出力です。全block・全writer・全lifetime、出力PCM本文、OS実file handle／read戻り本文、出力buffering、speaker位置、Viewerの `AudioSource.time` とのepoch、同一frame自然RGBは未成立です。過去runのconsumer・counterを今回の同時traceへ混ぜません。
+
+次は、この座標を同じ出力bufferのwriter→queue→consumerへ伝え、Viewerの既存decoder論理位置と対比する境界です。観測したresampler step変化を無視してconsumer単位をdecoder単位へ換算しません。公開変更は文書2件のみで、通常runtime・成功ブランチ・DLL未stage削除は保持。既存498件・142秒Viewer再生・RGB replayは今回未実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
+
 ## 同期時刻と補助値の追加観測
 
 先行監査で確認したSong時刻関数の、補助値を取得する自然呼出し境界を限定採取しました。同期時刻を保持するレジスタと、補助値の戻り値を別々に保存し、整数幅・符号拡張を区別しています。補助値のhelperには、下位のplayer参照がない場合の分岐もあります。helperの戻り値を保存したことから、全件で下位native parameter APIが呼ばれたとは推定しません。
