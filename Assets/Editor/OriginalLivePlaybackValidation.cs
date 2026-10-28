@@ -45,6 +45,7 @@ public static class OriginalLivePlaybackValidation
     static StreamingAudioCapture pcmCapture;
     static StreamingAudioCapture.Snapshot pcmSnapshot;
     static readonly List<PcmClockSample> pcmSamples = new List<PcmClockSample>();
+    static OriginalLiveContinuousRenderer.Trace? pcmFinalDraw;
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -205,6 +206,12 @@ public static class OriginalLivePlaybackValidation
         resolveBaseCamera = frame => !selectedCamera.HasValue ? null : selectedCamera.Value < 0 ? freeCamera : control.GetCamera(selectedCamera.Value)?.camera;
         preview = new OriginalLiveContinuousRenderer(provider, rightTrack, dual ? (int?)leftTrack : null,
             resolveBaseCamera, Shader.Find(OriginalMultiCameraRenderer.ShaderName), Shader.Find(OriginalMaskCoverageGenerator.ShaderName), target, dual);
+        if (SessionState.GetBool(Active + ".AudioPcm", false))
+            preview.TraceEmitted += trace =>
+            {
+                if (trace.Submission.Step == OriginalMultiCameraRenderer.Stage.FinalCompositeDrawn)
+                    pcmFinalDraw = trace;
+            };
         if (SessionState.GetBool(Active + ".FrameInputs", false))
         {
             frameInputs = new OriginalNaturalPostProcessProbe(preview);
@@ -268,13 +275,30 @@ public static class OriginalLivePlaybackValidation
                     smoothingClock.CommittedState.CurrentTime != observed.OwnerTime)) result.audioClockFailures++;
                 if (pcmCapture != null)
                 {
-                    if (!pcmCapture.MatchesClip(observed.Clip.GetInstanceID()) || pcmSamples.Count >= 16384)
+                    var draw = pcmFinalDraw;
+                    var clocks = frame.Selected.Selections.Where(x => x.ComparisonClock.HasValue)
+                        .Select(x => x.ComparisonClock.Value).ToArray();
+                    bool currentDraw = draw.HasValue && ReferenceEquals(draw.Value.Selected, frame.Selected) &&
+                        draw.Value.Submission.Output == target && target && target.IsCreated() &&
+                        draw.Value.Submission.FrameSerial > 0 && clocks.Length == frame.Selected.Selections.Count && clocks.Length > 0 &&
+                        clocks.All(x => Bits(x.CurrentOwnerTime) == Bits(observed.OwnerTime) &&
+                            Bits(x.ComparisonOwnerTime) == Bits(clocks[0].ComparisonOwnerTime) &&
+                            x.Current == clocks[0].Current && x.Comparison == clocks[0].Comparison);
+                    if (!pcmCapture.MatchesClip(observed.Clip.GetInstanceID()) || pcmSamples.Count >= 16384 || !currentDraw)
                         result.pcmFailures++;
                     else pcmSamples.Add(new PcmClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
                         readBeginTicks = observed.ReadBeginTicks, readEndTicks = observed.ReadEndTicks,
                         sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(),
                         audioSamples = observed.AudioSamples, sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime,
-                        completedCallbackSerial = pcmCapture.LastCompletedSerial });
+                        completedCallbackSerial = pcmCapture.LastCompletedSerial,
+                        sourceBits = Bits(observed.SourceTime), ownerBits = Bits(observed.OwnerTime),
+                        previousOwnerBits = Bits(clocks[0].ComparisonOwnerTime), previousOwnerTime = clocks[0].ComparisonOwnerTime,
+                        currentFrame = clocks[0].Current, previousFrame = clocks[0].Comparison,
+                        submissionSerial = draw.Value.Submission.FrameSerial, inputVersion = draw.Value.Submission.InputVersion,
+                        baseCameraId = draw.Value.BaseCamera ? draw.Value.BaseCamera.GetInstanceID() : 0,
+                        rightCameraId = draw.Value.RightCamera ? draw.Value.RightCamera.GetInstanceID() : 0,
+                        leftCameraId = draw.Value.LeftCamera ? draw.Value.LeftCamera.GetInstanceID() : 0,
+                        outputId = target.GetInstanceID(), outputWidth = target.width, outputHeight = target.height });
                 }
                 if (result.audioClockSamples.Count < 192 && (result.audioClockSamples.Count == 0 || frame.Selected.Serial % 60 == 0))
                     result.audioClockSamples.Add(new AudioClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
@@ -500,8 +524,16 @@ public static class OriginalLivePlaybackValidation
     [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
     [Serializable] class ClockCheckpoint { public string schema, smoothing; public float[] state, parameters; }
     [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, clipSamples, clipChannels, sourceId, clipId, renderedCount; public string clipName; public float sourceTime, ownerTime; }
-    [Serializable] class PcmClockSamples { public PcmClockSample[] rows; }
-    [Serializable] class PcmClockSample { public long serial, readBeginTicks, readEndTicks; public int unityFrame, sourceId, clipId, audioSamples, completedCallbackSerial; public float sourceTime, ownerTime; }
+    static int Bits(float value) => BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
+    [Serializable] class PcmClockSamples { public string schema = "ViewerAudioOwnerSubmission-v2"; public PcmClockSample[] rows; }
+    [Serializable] class PcmClockSample
+    {
+        public long serial, readBeginTicks, readEndTicks;
+        public int unityFrame, sourceId, clipId, audioSamples, completedCallbackSerial;
+        public float sourceTime, ownerTime, previousOwnerTime;
+        public int sourceBits, ownerBits, previousOwnerBits, currentFrame, previousFrame;
+        public int submissionSerial, inputVersion, baseCameraId, rightCameraId, leftCameraId, outputId, outputWidth, outputHeight;
+    }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;

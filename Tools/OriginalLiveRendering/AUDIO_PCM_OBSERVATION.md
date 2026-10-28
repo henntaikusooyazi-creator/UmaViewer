@@ -2,6 +2,27 @@
 
 `StreamingAudioCapture`は、既存のstream callbackを明示登録したときだけ記録します。元音源を再解析せず、従来のsample providerとstream Positionを利用します。通常UIへの自動登録はありません。
 
+## 自然音声から最終submissionまでの観測
+
+`-AudioPcm`時の`pcm-clock.private.json`は`schema=ViewerAudioOwnerSubmission-v2`です。各音声観測について、現在のprovider frameと`FinalCompositeDrawn`通知のselected objectが同一で、出力RTが現在のtargetであることを要求します。全channelの現在owner bitが音声clockのownerと一致し、比較owner bitと整数frame対がchannel間でも一致する場合だけ保存します。欠落・stale drawは`pcmFailures`となり、前回のdrawを補完しません。
+
+従来の時刻・source／clip・callback serialに加え、次を保存します。
+
+- `sourceBits`、`ownerBits`、`previousOwnerBits`、`previousOwnerTime`、`currentFrame`、`previousFrame`。
+- `submissionSerial`、`inputVersion`、左右・下地camera ID、出力RT IDと寸法。
+
+IDとserialは現在のViewer lifetime内の参照です。別runの原作cameraやresource IDとは直接比較できません。`FinalCompositeDrawn`通知との対応を記録しており、音声sampleの実スピーカー出力位置やGPU完了を保証しません。`-AudioPcm`未登録時の描画経路と通常時計は変更しません。
+
+最終ソースのmusic1001は142秒自然完走、6,591描画＝自然音声6,429更新＋明示既存時計tail 162更新。3,459 callback、左右同時66/66更新、初回late-only 1件保留、fault・例外・観測失敗0を確認しました。自然後処理の原作7段RGBを今回実行したという意味ではありません。
+
+原作run84の実draw保存入力は、pass 5の選択・実消費PS・queue範囲・readbackまで限定資格化し、Viewer再描画の128/128画素RGBAが一致しました。別に、同じframe・threadの先行parameterでgetter→ownerの8成分がbit一致しています。ただしparameter終了後にdrawが実行され、直接のCommandBuffer生成元は未結合です。run85では既存hook境界のcaller／stackとCommandBuffer前後を追加観測しました。共通の上位呼出しとsnapshot保持だけを根拠に、記録・実行世代が同じとは判定していません。
+
+run84の候補時計に対し、Viewer自然6,429件のsource bit・owner bit対・整数frame対が完全一致する更新は0件でした。この観測で正のsample増分の最大公約数は1,024でしたが、Unity全体の更新保証には拡張しません。補間・固定frame補正・最近傍選択による対応は作っていません。現在ソースの明示時計Control／GPU試験は528/528 PASS、両pipeline合計4,096画素の人工入力内部replay一致です。自然音声との一致や原作の同一frame RGBとは別判定です。
+
+run82の対象区間不一致とrun83のready失敗を保存し、run84／85も外側Pendingと`complete/pins_ok=false`を保持しました。解除・drain、通常終了と所有配備復元は別に確認しています。旧StopCompletedを要求するreaderや直接nested identityのreaderは変更せず、今回の保存GPU観測は別の限定schemaで検証しました。
+
+次の受入条件は、同一CommandBuffer実行世代から実drawへの直接対応、および原作同期cacheの実消費位置とViewer現在sample→ownerの対応です。それまで原作最終画面RGB比較を受け入れません。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`を維持します。
+
 ## 実消費時計の明示再生
 
 原作run81では、同じSong lifetimeの既知128 sampleから同期cache・実同期API戻り値を経て、その値を消費したgetterと同じUnity frameのowner記録まで接続しました。平滑化後の8成分がbit一致しています。これは同じframeのGPU command生成やViewerの音声epochまでを証明するものではありません。

@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 自然音声のowner対と最終submissionの観測
+
+`-AudioPcm`のEditor観測に、現在の音声値・owner時刻対・整数frame対と、同じselected objectの最終submissionを保存する経路を追加しました。出力RTと現在のchannel clockも照合し、古いdrawや異なるownerの値を保存しません。通常UI、時計算術、renderer本体は変更していません。
+
+最終ソースでmusic1001を142秒自然完走。6,591描画のうち6,429更新で自然AudioSource→平滑化owner→最終submissionの記録が成立し、残る162更新は明示した既存時計のtailです。callbackは3,459件、初回late-only 1件は保留、観測・描画faultと例外は0でした。これはViewer内部の対応で、GPU完了や原作音声とのepoch一致の保証ではありません。
+
+原作run84では、実pass 5→一意なqueue範囲→消費PSと入力・出力resourceのreadbackを取得し、その保存入力をViewerで再描画して128/128画素RGBA一致を確認しました。同じframe・threadの先行parameterで時計8成分も再計算一致しましたが、drawはparameter終了後で、直接のcommand生成元としては未結合です。追加run85で呼出しstackとCommandBufferの前後snapshotを取得しても、この境界は未成立のまま保持しています。
+
+run84の候補時計とViewer自然6,429更新をsource／現在・比較ownerのfloat32 bitおよび整数frame対で照合した結果、完全一致は0件でした。近い秒数や同じkeyを同一frameへ昇格せず、自然同期・原作最終画面RGB比較は未実施です。保存入力の128画素一致と、現在ソースで再実行した明示時計のControl／GPU 528/528・4,096画素内部replay一致を区別します。
+
+run82の対象区間不一致、run83のARM前ready失敗を残しました。全4 runの外側Pendingを維持し、hook解除・drainと通常終了後の所有配備復元を別に確認しています。保護13＋原作4、既存DLL未stage削除、成功ブランチを保持します。次の限定対象は、parameterで記録したCommandBufferの実行世代とdrawの対応、および原作同期cacheの読取段階とViewer現在sampleの対応です。[観測形式と境界](Tools/OriginalLiveRendering/AUDIO_PCM_OBSERVATION.md#自然音声から最終submissionまでの観測)を参照してください。
+
 ## 原作同期APIの実消費からowner・Viewer GPUへの明示再生
 
 run81で、同一Song lifetimeのHCA位置→decoderの128 sample→consumer→counter→同期cache→実同期API→実cached getter→平滑化後ownerの1本を接続しました。getterとowner記録は同じ原作Unity frameで、8成分がbit一致しています。run79のparameter未採取、run80の早期型guard拒否を残し、現在ownerの型資格化を修正して再採取しました。旧byte readerのseed進行拒否も保持し、資源identityを維持した別のbyte輸送判定として再評価しています。
