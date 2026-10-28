@@ -4,6 +4,14 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 原作同期APIの実消費からowner・Viewer GPUへの明示再生
+
+run81で、同一Song lifetimeのHCA位置→decoderの128 sample→consumer→counter→同期cache→実同期API→実cached getter→平滑化後ownerの1本を接続しました。getterとowner記録は同じ原作Unity frameで、8成分がbit一致しています。run79のparameter未採取、run80の早期型guard拒否を残し、現在ownerの型資格化を修正して再採取しました。旧byte readerのseed進行拒否も保持し、資源identityを維持した別のbyte輸送判定として再評価しています。
+
+公開Editor検証にrepo外の明示時計入力を追加しました。人工入力はBuilt-in／URP14で528/528 PASS（従来498＋30）。原作の明示入力を別実行した場合も528/528、時計8成分bit一致、実Control owner対→同じselected frameのGPU submission→4,096画素RGBA内部replay一致です。通常runtimeの時計や描画方針は変更していません。
+
+これは原作の自然frame RGB比較ではありません。原作ownerからGPU command生成元への接続とViewerの現在音声epochは残り、2 pipelineの再評価も独立原作観測へ合算しません。3 runの外側Pendingとbody `complete/pins_ok=false`を維持し、28 hook解除・drain・code pinsと通常終了後の所有配備復元を別判定で確認しました。自然142秒再生・原作GPU RGB replayは今回未再実行です。Core13・原作4と既存DLL未stage削除、成功ブランチを保持し、false／Unknown gatesを変更しません。[入力形式と検証範囲](Tools/OriginalLiveRendering/AUDIO_PCM_OBSERVATION.md#実消費時計の明示再生)を参照してください。
+
 ## Viewerの実PCM callbackと現在再生位置の対応
 
 原作run78の次の境界として、Viewerの既存伴奏読取りに明示登録する上限付き観測を追加しました。追加のdecodeやPCM本文保存を行わず、実read／set-position callbackの要求・戻り件数・stream前後位置を記録します。未登録時の既存callbackと時計は維持します。

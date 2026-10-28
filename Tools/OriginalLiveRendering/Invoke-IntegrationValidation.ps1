@@ -7,6 +7,7 @@ param(
     [string] $ConfirmedNaturalFade,
     [string] $ObservedMaskAlpha,
     [string] $ObservedMaskExecution,
+    [string] $ObservedClockConsumption,
     [switch] $MaskExecutionOnly,
     [switch] $StreamingAudioOnly,
     [switch] $PostProcessOnly,
@@ -21,7 +22,7 @@ $postModes = @(@($PostProcessOnly, $NaturalPostProcessOnly, $PostProcessParamete
 if ($ObservedMaskExecution -and -not $MaskExecutionOnly) {
     throw 'Observed mask execution requires its dedicated validation mode.'
 }
-if ($postModes.Count -gt 1 -or ($postModes.Count -gt 0 -and ($ConfirmedProducerProfile -or $ConfirmedOwnerClock -or $ConfirmedNaturalCue -or $ConfirmedNaturalFade -or $ObservedMaskAlpha))) {
+if ($postModes.Count -gt 1 -or ($postModes.Count -gt 0 -and ($ConfirmedProducerProfile -or $ConfirmedOwnerClock -or $ConfirmedNaturalCue -or $ConfirmedNaturalFade -or $ObservedMaskAlpha -or $ObservedClockConsumption))) {
     throw 'Postprocess-only validation takes artificial inputs; observed profile arguments would be ignored.'
 }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -74,6 +75,14 @@ try {
             throw 'Keep observed execution inputs outside the repository.'
         }
         $arguments += @('-observedMaskExecution', ('"' + $execution + '"'))
+    }
+    if ($ObservedClockConsumption) {
+        $clockInput = (Resolve-Path -LiteralPath $ObservedClockConsumption).Path
+        if ($clockInput.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+            $clockInput -eq $repo -or (Get-Item -LiteralPath $clockInput).Length -gt 65536) {
+            throw 'Keep bounded observed clock inputs outside the repository.'
+        }
+        $arguments += @('-observedClockConsumption', ('"' + $clockInput + '"'))
     }
     $process = Start-Process -FilePath $UnityExecutable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     $process.WaitForExit()

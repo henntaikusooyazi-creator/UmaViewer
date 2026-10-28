@@ -2,6 +2,35 @@
 
 `StreamingAudioCapture`は、既存のstream callbackを明示登録したときだけ記録します。元音源を再解析せず、従来のsample providerとstream Positionを利用します。通常UIへの自動登録はありません。
 
+## 実消費時計の明示再生
+
+原作run81では、同じSong lifetimeの既知128 sampleから同期cache・実同期API戻り値を経て、その値を消費したgetterと同じUnity frameのowner記録まで接続しました。平滑化後の8成分がbit一致しています。これは同じframeのGPU command生成やViewerの音声epochまでを証明するものではありません。
+
+`OriginalObservedClockValidation`は、外部の明示観測を既存の`OriginalLiveClockMath`へ渡し、実Controlのowner対と対応する最終GPU submissionを確認するEditor用検証です。geometry・camera・mask入力は人工です。通常の時計、AudioSource、ライブUIへ自動登録しません。
+
+```powershell
+./Tools/OriginalLiveRendering/Invoke-IntegrationValidation.ps1 `
+  -UnityExecutable <Unity executable> -OutputPath <external output> `
+  -ObservedClockConsumption <external observation>
+```
+
+入力は64KiB以下のrepo外JSONです。`schema=ExplicitConsumedClock-v1`、`smoothing=Enabled|Disabled`、`sourceTime`、4要素の`state`、5要素の`parameters`を明示します。state／parametersの順序は既存`ExplicitClockCheckpoint-v1`と同じです。`expectedBits`は次の8値のfloat32 bitをsigned Int32で保持し、`currentFrame`／`previousFrame`は観測済みのControl整数frameです。privateな実測値は公開しません。
+
+1. source time
+2. smoothed time
+3. correction
+4. next previous-source time
+5. current owner time
+6. previous owner time
+7. elapsed time
+8. current owner timeの書込み先に保持された値
+
+Built-in／URP14で、公開可能な人工入力は528/528 PASS（従来498＋追加30）。別実行の原作明示入力でも528/528 PASS、8成分bit一致、各2,048画素・合計4,096画素の内部RGBA replay一致を確認しました。2 pipelineは同じ原作観測の再評価であり、独立した原作観測へ合算しません。`observed-clock-*.private.json`のselected／submission serialはViewer内部の対応で、原作Unity frame番号とは別です。
+
+先行run79のparameter未採取とrun80の早期owner型guard拒否は保持しました。既存hookの早期選択と、既に資格化したDirector field型から現在ownerを検証する経路を修正して再採取しています。原作run81の旧byte readerはseed間の保持sample field進行を拒否したままです。別のbyte輸送判定で同じ資源・世代・packetを要求し、当該fieldの単調進行を明示保持しました。これをsample時刻の連続性やPCM原点の推測に使っていません。
+
+3 runとも外側Pendingとbodyの`complete/pins_ok=false`を維持します。28 hook解除・remaining 0・drain・code pins、通常終了後の不在と所有配備復元は別に確認しました。時計の観測は保存証拠の限定判定であり、StopCompletedや実行時held handle復旧へ昇格しません。自然142秒再生・原作GPU RGB比較は今回未再実行です。同じ原作owner更新からGPU command・camera・resource版への接続、Viewerの現在音声とのepoch、原作とViewerの同一frame RGBは未成立です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`と歴史的Pendingを維持します。
+
 ## 記録と所有権
 
 - 資源名・waveを明示し、同時登録は1件です。別資源・別waveは対象外です。

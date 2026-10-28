@@ -449,6 +449,7 @@ public static class OriginalLiveContinuousValidation
                     Check(resolve.Invoke(destroyingClock, new[] { Snapshot(1) }) == null && destroyingClock.HeldReads == 1,
                         "A clip destroyed during evaluation cannot publish a pending correspondence.");
             }
+            checks += OriginalObservedClockValidation.Exercise(control, background, target, profile, binding);
             var character = Go("Synthetic explicit physics opt out").AddComponent<UmaContainerCharacter>();
             Check(character.InitializeNativePhysicsOnLoad, "Existing physics initialization remains the default.");
             character.InitializeNativePhysicsOnLoad = false; character.LoadPhysics();
