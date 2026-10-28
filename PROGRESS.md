@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 本編の符号化入力packetからpoolとdecoderへの限定接続
+
+本編の現在Song資源を実getterのreceiverから資格化し、符号化入力の書込み2件・取得2件・block入力4件、合計8/8件をstrict readerで採用しました。入力packet metadataは2/2件で実書込みnodeに一致し、そのうち同じ1 bufferについて、書込み→pool取得→decoderの最初のblock入力を1組接続できました。先行する未追跡の取得1件、および残るblockを独立した生成lineageへ数えません。
+
+先行採取ではpreview音源との混同、無関係なcallbackによる共有読取り枠の消費、未追跡の取得による保存枠の占有を検出しました。本編の有限資格化、読取り前の対象除外、追跡済み取得用の枠予約、必要な記録が完了した時点での追加採取停止を実装し、上限を増やさず再採取しています。最終runは共有読取り上限未到達。上限到達で拒否された旧runは拒否のまま保存しました。
+
+閉鎖検証はnative encoded74件・Python438件・資源107件PASS。readerの117 statements・32 branchesは未通過0、Ruff PASSです。保存先を変え、元temp・ゲーム原本のreadを拒否した再評価でも同じ8件と限定接続を再現しました。
+
+入力packet内のdata・長さ・offset候補・node参照を照合した成果であり、元HCA/AWBの絶対byte/block位置やdecoder絶対sample原点、Viewer PCM epochは未成立です。次は同じpacketをsource queueへ投入したproducerと、read resourceの実offsetを直接結びます。以前の初期化・range・consumer・counterの別run証拠を、今回の同時traceへ混ぜません。
+
+外側の `PendingManualRecovery / observation_flags` は維持します。最終runの28 hook解除・remaining 0・drain・code pin照合、通常終了後の所有配備復元、Core13件・原作4ファイル・proof222件のhash不変は別に確認しました。公開変更は文書2件のみで、通常runtime・成功ブランチ・DLLの未stage削除を保持しています。既存498件・142秒Viewer再生・RGB比較は今回未再実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` を維持します。
+
 ## decoder初期化から明示rangeと符号化block入力への限定接続
 
 再生前からの有限採取で、**header初期化1/1件・明示range設定1/1件・block入力4/4件がstrict readerを通過**しました。同じSong・資源世代・入力context・decoder handle・threadと実caller、前後snapshot、呼出し順を照合し、初期化→range→4 block入力を1本のlifetimeへ対応付けています。header入力6成分の格納と、rangeの実2引数からdecoder状態への書込みも一致しました。保存したloop末尾値と限定命令を使う非正loop長の範囲では、range引数を再計算して一致しています。

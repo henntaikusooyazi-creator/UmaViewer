@@ -350,3 +350,33 @@ decoderでは、実引数のhandleが現在の入力contextに保持される実
 source・証拠・再現手順は上限付きdurable manifestへ保存し、全archive hashを確認しました。元temp・ゲーム原本へのreadを拒否した再評価で、先行失敗の拒否結果と最終6記録・順序付き対応・限定range再計算を再現しています。private値・命令・layout・UI画像は公開していません。
 
 次の有限edgeは、最初の符号化入力bufferのwriter／版と元資産範囲への直接対応です。header相対の候補を絶対sample原点へ読み替えません。公開は2文書のみで、通常runtime・成功ブランチ・DLL未stage削除を維持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。`OriginalVerified=false`、`runtime_contract=false`、`SourceToViewerClockContract=false`、`Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 本編の符号化入力packet・pool・decoderの同一run接続
+
+本編音源の現在Song資源を、自然getterの実receiver、現在の型と音源識別、前後資源snapshotで限定資格化しました。getterのreceiver資格化と、失敗した時計・値joinを区別しています。previewの限定観測を本編へ流用せず、過去の本編初期化・range記録も別証拠として保持しました。
+
+| 対象 | 最終runの判定 |
+| --- | --- |
+| 符号化入力の書込み | 2/2件採用 |
+| 現在input poolからの取得 | 2/2件採用。先行1件は書込み未追跡として保持 |
+| decoder block入力 | 4/4件採用 |
+| 実入力packet metadataと書込みnode | 2/2件対応 |
+| 書込み→追跡済み取得→block入力 | 同じ1 bufferの最初のblock、1組のみ |
+| 共有読取り上限 | 未到達。設定済み記録の完了時に採取windowを閉鎖 |
+| 元資産の絶対位置・decoder絶対sample原点・Viewer PCM epoch | 未成立 |
+
+入力packetは、実書込みcallerの保持するsource側実体に対応します。保存済み完全関数と小さなcalleeを限定確認し、同じ書込みの前後でpacketのdata・長さ・offset候補・node参照を読み取りました。data範囲と書込みnodeの関係が一致しています。ただしpacket内offsetをファイルoffsetと命名せず、元資産のどの絶対blockから生成されたかはUnknownです。PCM・符号化本文、SDK手動呼出し、原作媒体コピーは追加していません。
+
+4 blockは同じ1本の完全生成lineageを4回独立観測したものではありません。strict readerが同じ取得snapshotへ直接結べたのは最初のblockだけです。もう一つの書込みpacketと先行未追跡取得も、この接続数へ合算しません。以前のdecoder出力→consumer→counterや初期化→rangeは別runの限定証拠です。
+
+先行run57～62では、対象外資源・previewやmanager取得不足を区別しました。run63～64では本編記録を保存しましたが、終了時の共有読取り上限到達によりreaderは拒否しています。その結果を緩めず、新版では対象外callbackを読取り前に除外し、追跡済み取得の保存枠を確保しました。必要な8記録が完了したらcollectorの追加時計・parameter採取を停止し、最終runで上限内の採取を成立させています。ゲームの時計・再生状態を変更する処理ではありません。
+
+DLLサイズ上限超過は配備前に拒否し、重複snapshotと専用版の不要な出力を整理して既存上限内へ戻しました。閉鎖GPU試験の一時的な解除失敗と作業directoryの誤りによる失敗を保持し、正しい専用directoryの単独再試験と一式検証を通しています。所有backup不足、UI画像上限、確認から再生までの期限、通常終了後の不在確認などの途中失敗・修正は私有checkpointへ記録しました。read-onlyのdispatch参照調査は実読取り不成立として残し、実targetやbuffer版の成功へ昇格していません。
+
+最終sourceの閉鎖検証はencoded74件・資源107件・Python438件PASS。reader117 statements・32 branchesは未通過0、Ruff PASSです。legacy producer ABI26件・buffer67件・decoder28件・origin56件は別カテゴリとし、通常／productionの同一fixture再評価や過去観測を二重計上しません。hook数、source graph、DLL、候補・保存・resource／buffer／input・sidecar・共有読取りの既存上限は維持しました。今回明示したpacket metadataも有限2件に限定しています。
+
+最終runも外側 `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` と既存metadata slot不変条件の不成立を保持します。28 hook解除・remaining 0・drain・runtime／GPU code pin照合と、通常WM_CLOSE後のprocess／window不在・所有配備復元は別に確認しました。Core13件・原作4ファイル・最終proof222 source／検証入力のhashは不変です。StopCompletedや保持handleによる実行時復旧成功へ変更しません。
+
+source・証拠・再現手順を上限付きdurable manifestに保存し、全archive hashを検査しました。元temp・ゲーム原本へのreadを拒否した保存後再評価で、旧runの拒否と最終8件採用・packet対応2件・限定接続1件を再現しています。private値・命令・layout・UI画像は公開していません。
+
+次の有限edgeは、この実packetをsource queueへ渡したproducer、その入力read resourceと絶対位置の結合です。counter・rate・既知HCA値から補完しません。公開は2文書のみで、通常runtime・成功ブランチ・DLL未stage削除を維持し、既存498件・142秒Viewer再生・RGB比較は今回未再実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
