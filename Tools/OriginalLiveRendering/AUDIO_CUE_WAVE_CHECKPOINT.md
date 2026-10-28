@@ -1,5 +1,42 @@
 # Song cueからwave・PCM先頭への限定対応
 
+## 同一consumer座標から原作の実同期時刻まで
+
+### 同一runで成立した1本の接続
+
+run78では、同じSong・資源世代・decoder handleの初期化／range、ファイル位置付きpacket、block消費、直後128 sampleの同じoutput buffer、writer・queue・consumerと、現在のcounterから実同期時刻APIまでを接続しました。主記録8件・state対2組、writer／queue／既知consumer各1件、介在consumer3件、同期側9種類の記録です。独立bufferとlineageはいずれも1件で、過去runのcounterや別bufferを混ぜていません。
+
+| 区間 | 今回の限定確認 |
+| --- | --- |
+| block位置→decoder-local座標→実出力 | 同一初期化・明示range/current stateと128 sample |
+| 同じbuffer→writer→queue→consumer | 現在のpointer・node・世代・unit-step・実行順で対応 |
+| 既知sample→累積消費区間 | callの実処理範囲と前後counter stateで対応 |
+| 介在consumer→自然counter照会 | 3 callの実増分が連続。未保存増分を補完しない |
+| counter→sample transfer | held減算・0 clampと実戻り値、wrap／加算stateが一致 |
+| transfer→同期cache writer | 観測した通常分岐の入力から前後stateと実書込み引数を再計算 |
+| 同じcache→同期µs→同期ms | 実elapsed入力・ratio・float係数、補間・clampと両実戻り値が一致 |
+| Viewer PCM epoch・speaker位置・同一frame RGB | 未成立 |
+
+既知128 sampleを含むcallは、その範囲以外も処理しています。call全体の戻り数を既知出力数へ読み替えず、node内offsetと実処理範囲で対応させました。介在callには同じ現在資源・context・held値・unit-stepと累積値の連続性を要求しています。今回の区間対応を全bufferの絶対座標や一般的な初期化規則へ拡張しません。
+
+同期cache側は自然な呼出しの入れ子とthread、同じplayback／voice／context、前後state、実出力引数、callerを照合しました。現在のfloat係数はcached fieldだけで決まらないため、実getter戻り値も取得しています。現在cache版と実elapsed µs・ratioを用いた再計算が内部同期µsと公開APIのms戻り値に一致しました。手動SDK／ゲーム関数呼出し、PCM本文保存、counter/rateからの原点逆算、固定frame補正は行っていません。
+
+### 準備失敗と保護条件
+
+run76・77は再生前の準備失敗です。係数getterの移設長に誤りがあり、実命令familyをown-processメモリへ構築する閉鎖fixtureで修正しました。また、近接した2 helperの同時hookは既存の64-byte離隔条件と両立しませんでした。保護を緩めず、実elapsed入力を受け取るcallと内部同期戻り値を観測する別の完全関数へ変更し、全18 targetの153組を検証しています。QPC timer／frequencyの両実戻り値まで取得した証拠にはしません。
+
+旧解析はmodule baseの型とpacked sectionを通常PEとして読んだ箇所で拒否されました。元sourceと失敗logを残し、post解析では16進baseを明示処理し、既存のpin済offline decoderを限定readへ再利用しています。9 actual return-siteの保存prefixと完全caller bodyが同一buildに一致しました。元readerの受入条件を緩めたものではありません。
+
+最終native222件、Python1,026件、資源107件がPASS。新2readerの186 statements・32 branchesは未通過0、Ruff PASSです。件数には継承人工と153組の離隔確認を含み、原作観測数へ加算しません。post orchestrationや既存offline decoder全体のbranch coverageを示すものでもありません。凍結archiveの全hashを検査し、元temp・原作・Core原本・媒体を開けない別rootから、保存証拠と明示ロードした凍結依存だけで同じ接続を再現しました。
+
+### 停止・復元と残るepoch境界
+
+最終runも外側 `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` を維持します。28 disable・remaining 0・drain・runtime／GPU code pin照合・read error 0・limit未到達と、通常WM_CLOSE後の不在・所有配備復元は別に確認しました。Core13・原作4・事前proof356 source／検証入力のhashは不変です。先行準備失敗と歴史的PendingをStopCompletedや実行時held handle復旧成功へ置換しません。
+
+Viewerの既存streamはdecoder論理位置とbyte位置を区別し、AudioClipの位置callbackとread callbackへ接続しています。これは静的確認で、今回Viewerを起動して同じcallback位置を観測した結果ではありません。`AudioSource.time`と`timeSamples`の対応、原作同期時刻とのepoch、speaker位置、同一frameの自然RGBは未成立です。次は同じ資産の論理座標を、Viewerの実callbackと現在AudioSourceに結ぶ有限観測です。実測なしにsample/rateやdelay名の補正で補いません。
+
+公開変更は2文書のみ。既存498件・142秒Viewer再生・原作RGB replayは未再実行、通常runtime・成功ブランチ・DLL未stage削除は維持します。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` を変更しません。
+
 ## 同一sample座標の出力buffer・queue・consumerへの伝搬
 
 ### 同一runで成立した範囲

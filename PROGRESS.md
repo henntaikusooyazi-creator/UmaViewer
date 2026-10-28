@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 同一consumer座標から原作の実同期時刻まで
+
+run78では、同一Song・資源世代・decoder lifetimeのファイル位置付きblock、明示range/current state、直後128 sample、同じoutput bufferのwriter・queue・consumerに加え、現在の累積消費量・held値・counter、自然sample照会、同期cache生成、実同期時刻APIの戻り値までを**同一runの1本**で接続しました。独立bufferは1件、既知出力を含むconsumerは1呼出し、その後の介在consumerは3呼出し、同期側は9種類の記録です。nested callや再評価を独立観測へ加算しません。
+
+既知128 sampleの座標を実consumerの累積区間へ対応させ、介在callの実戻り数と前後stateから、自然照会までの消費増分が連続することを確認しました。held減算・0 clamp、wrap／transfer state、通常分岐の同期cache演算、現在のelapsed µs・ratio・実float係数による補間とclamp、実µs／ms戻り値が一致しています。counterをdecoder位置そのものと見なしたり、固定の秒数・frame補正を追加したりしていません。全bufferの座標や実speaker位置の証明ではありません。
+
+先行run76・77は再生入力前の準備失敗として保持します。移設長の誤りを実命令familyの閉鎖fixtureで修正し、近接するhelperの同時採取は既存64-byte保護条件により拒否しました。保護条件を変更せず、実elapsed入力と内部同期戻り値を観測する別境界へ移しています。QPC timer／frequencyの2つの実戻り値を今回取得したとは主張しません。解析時の16進module baseとpacked sectionの扱いによる旧拒否も保持し、post専用の解析で既存pin済offline decoderを使い、9 actual return-siteのprefixと完全caller bodyを照合しました。
+
+最終構成で閉鎖native222件、継承人工を含むPython1,026件、資源107件がPASS。native222件には18 targetの離隔153組が含まれ、原作観測数ではありません。新2readerの186 statements・32 branchesは未通過0、Ruff PASSです。凍結manifestと保存証拠だけを使い、原作・元temp・Core原本・媒体readを禁止した再評価でも同じ限定接続を再現しました。post orchestration全体のbranch coverageとは区別します。
+
+最終runの外側は `PendingManualRecovery / observation_flags`、bodyは `complete/pins_ok=false` のままです。28 hook解除・remaining 0・drain・runtime／GPU code pins・read error 0・limit未到達、通常WM_CLOSE後の不在と所有配備復元を別に確認しました。Core13・原作4・採取前proof356 source／検証入力のhashは不変です。run76・77と歴史的Pendingを成功へ置換しません。
+
+Viewer既存コードのdecoder論理位置→stream byte位置→AudioClip callbackは静的確認にとどまり、現在のAudioClip callback・`AudioSource.time/timeSamples`と原作同期時刻のepoch契約は未成立です。次の有限edgeは、この原作座標をViewerの実callback／現在再生位置へ結ぶことです。公開は2文書のみ。通常runtime・成功ブランチ・DLL未stage削除を保持し、既存498件・142秒Viewer再生・RGB比較は今回未再実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` を維持します。[範囲と再評価](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#同一consumer座標から原作の実同期時刻まで)を参照してください。
+
 ## 同一sample座標の出力buffer・queue・consumerへの伝搬
 
 run75の保存観測では、同じSong・資源世代・decoder handleの初期化／range、ファイル位置付きpacket、block消費、直後の出力pointer、同じbufferのwriter・queue・consumerが**同一runの1本**で接続しました。資産上のblock位置とdecoder-local座標の一致に加え、追跡した128 sample全体が実consumerの処理範囲に含まれています。主記録8件・state対2組・追加3イベントで、独立bufferは1件です。過去runのconsumer／counterを今回の同時traceへ混ぜていません。
