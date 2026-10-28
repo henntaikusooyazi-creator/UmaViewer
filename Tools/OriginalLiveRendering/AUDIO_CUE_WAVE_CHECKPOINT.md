@@ -409,3 +409,33 @@ run66・67の共有読取り上限による拒否は維持しました。補助�
 最終runの外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` のままです。28 hook解除、remaining 0、drain、runtime／GPU code pins、通常WM_CLOSE後のprocess不在と所有配備復元は別判定です。Core13・原作4・proof259件のhash不変を確認しました。公開は2文書のみで、通常runtimeと成功ブランチ、DLL未stage削除は保持しています。既存498件・142秒Viewer再生・RGB比較は再実行していません。
 
 次は同じファイル位置付きpacketからpool取得とdecoder block消費への接続です。今回の2packetを過去runのdecoder観測と同一buffer扱いにせず、OS I/Oの直接証拠が必要な範囲も別に保持します。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## 同一runのファイル位置付きpacket・pool取得・decoder primary消費
+
+run70で、同じ本編Song資源・世代の1packetを自然read要求からdecoder入力まで追跡しました。既存の不要な描画観測枠を2つ置換し、hook総数・source graph・DLL・candidate・保存・resource/buffer・sidecar・共有読取り上限を増やしていません。ゲーム関数／SDKの手動呼出し、媒体コピー、PCMや符号化本文の採取もありません。
+
+| 対象 | 結果と範囲 |
+| --- | --- |
+| seed・read要求・完了queue投入・input pool書込み | 各1件 |
+| 同じnodeのpool取得 | 実戻りpointerを含め1件対応 |
+| 同じpacket範囲のdecoder消費 | primary入力内で完結する1 block |
+| 同一runの連鎖 | 要求→source投入→write→take→decoder、1packet・1本 |
+| single-input限定reader | 5件採用・decoder1件拒否・lineage0のまま保持 |
+| primary-span限定証拠 | 第2入力を保持した別の判定で6/6件・1本 |
+| loaderの現ファイルと選択AWB | 全内容hash・Core Wave範囲を再照合 |
+| 実消費範囲とHCA位置 | 符号化資産上の単一block範囲へ対応 |
+| OS read本文・packet本文・絶対sample原点・PCM epoch | 未成立 |
+
+実decoder呼出しには第1・第2の2入力が渡されていました。事前readerの「第2extentがゼロ」という仮定に合わなかったため、その拒否とlineage0を保存しています。追加の限定判定では、同一buildの完全関数と実caller、自然呼出しの全引数・成功戻り値・出力消費長を確認しました。消費長が第1extent内に収まるときに第2側消費がゼロになる命令分岐へ限定し、実第2pointer・長さをゼロに書き換えず保持しています。両入力に跨がる場合、secondary pointer欠落、巨大extent、別版・別node・範囲外・未完了・順序不一致を拒否します。
+
+request、source completion、writer、take、decoderは実packet版とnode/data範囲を直接照合しています。takeの実戻りpointerとdecoderの実入力pointer・消費長も一致条件です。観測threadは各段で保存し、queueの因果を同threadという仮定で代用していません。今回の採用区間では同threadでした。後続のdecoder出力・consumer・counterや初期化/rangeは別runの限定証拠のままです。
+
+通常ゲーム終了後に、現在loader pathのファイルを選択AWBの宣言内容hashへ照合し、凍結した既存Core readerを変更せずread-only hostで実行しました。実要求と実decoder入力範囲を同じWave/HCA metadataに対応付けています。低層offsetは保持baseと観測要求からの静的導出であり、OS handleやread戻りbyte列を直接観測したものではありません。packet本文のbyte一致やdecoder絶対sample位置を主張せず、再生先頭bufferとも呼びません。
+
+nativeの追加chain検証39件、事前Python575件・資源107件、採取後primary reader50件がPASS。single-input reader44 statements/10 branches、primary reader44/10、queue82/26、transport22/14は未通過0、Ruff PASSです。従来queue33・producer26・buffer67・decoder28・origin56・encoded74は別カテゴリとし、同じ人工ケースや過去原作観測へ合算しません。採取windowは1packet・6行で閉じ、共有上限未到達です。
+
+凍結archiveの全hashを照合し、元temp・原作・Core原本・媒体へのreadを拒否する保存後再評価で、旧拒否と限定成功、HCA byte範囲を再現しました。初回harnessの旧temp依存importは拒否されたまま残し、凍結依存の明示ロードだけを修正したharnessで再評価しています。保存観測とreaderの判定条件は書き換えていません。
+
+外側 `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false`、歴史的Pendingを維持します。28 hook解除・remaining 0・drain・runtime/GPU code pin、通常WM_CLOSE後のprocess不在と所有配備復元を別に確認しました。保持handleによる実行時復旧成功へ昇格しません。Core13・原作4・事前proof272 source/検証入力のhashは不変です。
+
+公開は2文書だけで、通常runtime・成功ブランチ・DLL未stage削除は維持。既存498件・142秒Viewer再生・RGB比較は今回未再実行です。次は同一decoderの明示range/current state進行と、この絶対encoded block位置を接続します。counter・rate・既知HCA delayからsample原点を逆算しません。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` を維持します。
