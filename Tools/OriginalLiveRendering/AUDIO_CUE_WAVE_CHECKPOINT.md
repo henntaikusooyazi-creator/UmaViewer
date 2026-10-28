@@ -1,5 +1,39 @@
 # Song cueからwave・PCM先頭への限定対応
 
+## 同一sample座標の出力buffer・queue・consumerへの伝搬
+
+### 同一runで成立した範囲
+
+run75では、現在loaderの資産上のHCA block位置、同一decoderの実初期化・明示range・current state、直後128 sampleの出力pointer、同じ出力bufferのwriter、queue、consumerを1本で接続しました。主記録8件・state対2組・追加writer／queue／consumer各1件の保存観測です。独立bufferは1件であり、各判定や再評価を別の原作観測数へ加算しません。
+
+下流では、現在のSong・資源世代・component・interface・context・output poolとunit-stepを前後で照合しました。同じnodeとchannel別pointer、容量、残量、caller、実行順を要求し、既知のdecoder出力範囲が実consumerの処理範囲に含まれることを確認しています。counter・rate・held値からsample座標を逆算せず、過去runのbufferやcounter記録も結合していません。
+
+queueの実interface slotは薄いwrapperを指していました。現在pointerと命令prefixを保存し、同一buildのwrapperから採取対象queue本体への直接tail jumpと実callerを照合しました。資産名の類似や関数名だけを根拠にしていません。pool writerはvoidであり、保存した戻りregisterを成功statusへ読み替えません。
+
+consumerの処理数は実戻り値で、destination pointer arrayをcountとして読みません。また、1呼出しが最初のnodeを使い切って後続nodeへ継続できることを、完全関数で確認しました。現在のunit-step分岐に限定し、call全体の処理数と選択nodeの消費量を分け、残量・pointer進行・queue headの変化で検証します。最大2呼出しが既知128 sampleを隙間なく覆う条件を準備しましたが、最終観測では1呼出しで全範囲が成立し、残るslotは未使用です。全call戻り数を既知出力のsample数として数えていません。
+
+### 先行未達と修正
+
+run72は、主記録を採取し終えた後の下流観測にも旧描画window条件を適用したため、直後のwriterを取り逃しました。再利用の検出とreader拒否を保持しています。run73はその条件を直しwriterを取得しましたが、別のinput bridgeのcallerをoutput queueへ流用しており、queue／consumerは未接続でした。保存済みの実output queue callerと同一build命令から資格化し直しました。
+
+run74ではwriter・queue・2 consumerを取得しましたが、interface slotが直接queue本体を指すという仮定と、consumerのdestination引数をcount出力pointerとして読む誤りが残っていました。元データ・error・未閉鎖・旧readerの拒否を保持しています。原因は当時の閉鎖fixtureも同じABI仮定を模倣していたことです。新規rootで、wrapperと実消費ABI、destination arrayをcountとして読まない条件、後続nodeへ跨がる実戻り数、有限consumer範囲の採用／拒否を検証してrun75を実施しました。受入条件を後付けで緩めたり旧Pendingを成功へ変更したりしていません。
+
+### 検証と保全
+
+最終ソースの閉鎖native63件、継承人工を含むPython923件、資源107件がPASSしました。新reader単体80 statements・14 branchesは未通過0、Ruff PASSです。旧モデルの人工試験が通ったことを実ABI一致の証明にはせず、継承試験・今回の実測・同じ保存観測の再評価を区別しています。orchestrationやcollector全体のcoverageではありません。
+
+主記録8件と3追加イベントで共有読取りを閉鎖し、上限未到達・output再書込み検出0・destination error 0でした。hook総数とDLL・共有読取り上限を維持し、追加SDK／ゲーム関数の手動呼出しやPCM本文採取は行っていません。凍結archiveの全hashを照合し、凍結済み依存だけを明示ロードした別rootで、原作・元temp・Core原本・媒体readを禁止して資産範囲・decoder座標・下流伝搬を再現しました。先行未達の凍結証拠も元の拒否を再現しています。
+
+4 runの外側 `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` は維持します。最終runの28 hook解除・remaining 0・drain・runtime/GPU code pins・read error 0と、通常WM_CLOSE後の不在、所有配備復元は別に成立しました。Core13・原作4・採取前proof323 source／検証入力のhashは不変です。観測の限定接続をStopCompletedや実行時held handle復旧へ昇格しません。
+
+### 残るepoch境界
+
+成立は、単一の既知出力範囲が同じbufferから実consumerへ伝わったという限定証拠です。PCM本文の一致、全writer閉包、speaker位置、全lifetime、原作同期時刻とViewerの `AudioSource.time` のepoch、同一frame自然RGBは未成立です。
+
+Viewerの既存delay-trimmed readerとAudioClip位置callbackには対応する論理座標の静的候補があります。readerの位置・先読み位置を現在音声出力位置へ読み替えず、今回の候補をruntimeへ供給していません。次は同じconsumer座標と当該contextの現在counter／同期時刻の実戻り値を同一lifetimeで結び、その後にViewerの実音声位置を対応させる境界です。
+
+公開は文書2件のみ。通常runtime・成功ブランチ・DLL未stage削除を保持し、既存498件・142秒Viewer自然再生・RGB replayは今回は未実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
+
 ## 資産のencoded blockと同一decoderの論理sample座標
 
 run71は、前回のファイル位置付きpacketとdecoder入力の接続に、同じdecoderの初期化・明示range設定・current stateを追加した有限採取です。初期化1件、range設定1件、source seedとread要求・完了queue投入・input pool書込み・pool取得・block消費を各1件、計8記録を保存しました。block前後と、その直後に自然実行されたlocal output前後のstateは、主記録とは別の2組として保持しています。8本の独立lineageや別bufferとは数えません。

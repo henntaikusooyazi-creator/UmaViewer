@@ -1,8 +1,22 @@
 # 原作方式ライブレンダラの進捗
 
-更新日：2026-10-28。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
+更新日：2026-10-29。通常ライブへ自動採用しない、明示登録の **TestOnly** 開発ブランチです。
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
+
+## 同一sample座標の出力buffer・queue・consumerへの伝搬
+
+run75の保存観測では、同じSong・資源世代・decoder handleの初期化／range、ファイル位置付きpacket、block消費、直後の出力pointer、同じbufferのwriter・queue・consumerが**同一runの1本**で接続しました。資産上のblock位置とdecoder-local座標の一致に加え、追跡した128 sample全体が実consumerの処理範囲に含まれています。主記録8件・state対2組・追加3イベントで、独立bufferは1件です。過去runのconsumer／counterを今回の同時traceへ混ぜていません。
+
+実consumerは最初のnodeを消費した後、後続nodeの処理へ継続できます。呼出し全体の戻り数と選択nodeの消費を分け、現在のunit-step、queue head、同じnode・channel別pointer進行、処理前後の範囲と実行順を要求しました。最大2 consumerの限定検証を準備しましたが、最終runでは1呼出しで既知128 sample全体を確認し、第2slotは未使用でした。PCM本文の一致やspeaker位置の証明ではありません。
+
+先行run72は旧描画window条件の誤適用、run73は別経路のqueue caller仮定により未接続でした。run74では実イベントを取得しましたが、interface wrapperとconsumer引数のABI解釈が誤っており拒否を保持しました。完全関数と実入力から修正し、現在wrapperのpointer／prefixとqueue本体へのtail jump、実戻り数、void writerの戻り値をstatusにしない条件を検証して新規runへ進んでいます。旧記録・旧reader・拒否結果は変更していません。
+
+閉鎖native63件、継承人工を含むPython923件、資源107件がPASS。新readerの80 statements・14 branchesは未通過0、Ruff PASSです。凍結保存後、原作・元temp・Core原本・媒体を読ませない別rootの再評価でも同じ限定接続を再現しました。既定のhook・DLL・共有読取り上限を維持し、SDK／ゲーム関数の手動呼出しや媒体の複製は行っていません。
+
+4 runの外側 `PendingManualRecovery / observation_flags` とbody `complete/pins_ok=false` は維持します。最終runでは28 hook解除・remaining 0・drain・code pins・read error 0・limit未到達、通常WM_CLOSE後の不在と所有配備復元を別に確認しました。Core13・原作4・採取前proof323 source／検証入力のhashは不変です。保存観測の接続をStopCompletedや実行時held handle復旧へ昇格しません。
+
+公開変更は文書2件のみ。通常runtime・成功ブランチ・DLL未stage削除を保持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。Viewerの既存readerには対応する論理座標の静的候補がありますが、`AudioSource.time`、原作同期時刻、実出力とのepoch契約は未成立です。次は同じconsumer座標と現在のcounter／同期時刻を同一lifetimeで結ぶ境界です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。[限定範囲と再評価](Tools/OriginalLiveRendering/AUDIO_CUE_WAVE_CHECKPOINT.md#同一sample座標の出力bufferqueueconsumerへの伝搬)を参照してください。
 
 ## 資産のencoded blockと同一decoderの論理sample座標
 
