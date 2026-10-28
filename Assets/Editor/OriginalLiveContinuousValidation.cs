@@ -298,6 +298,17 @@ public static class OriginalLiveContinuousValidation
                 Check(ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Audio disposal preserves a replacement provider.");
                 director.OriginalLiveTimeProvider = null;
 
+                var readDsp = typeof(OriginalLiveAudioClock).GetMethod("TryReadDsp", BindingFlags.Static | BindingFlags.NonPublic);
+                foreach (Func<double> reader in new Func<double>[] { null, () => -1, () => double.NaN,
+                    () => double.PositiveInfinity, () => double.NegativeInfinity, () => throw new InvalidOperationException("Artificial DSP failure") })
+                {
+                    var arguments = new object[] { reader, 0d };
+                    Check(!(bool)readDsp.Invoke(null, arguments), "Missing, invalid, or throwing DSP diagnostics remain unavailable.");
+                }
+                var validDsp = new object[] { (Func<double>)(() => 1.25d), 0d };
+                Check((bool)readDsp.Invoke(null, validDsp) && (double)validDsp[1] == 1.25d,
+                    "Valid diagnostic DSP time retains its measured double value.");
+
                 var limits = new OriginalLiveClockMath.Parameters(true, .02f, .001f, .002f, .1f, 100f);
                 var clockState = new OriginalLiveClockMath.State(1, 1, 0, 1);
                 Check(OriginalLiveClockMath.TryEvaluate(1.06f, clockState, limits, out var calculated) && calculated.Smoothed &&
@@ -344,6 +355,8 @@ public static class OriginalLiveContinuousValidation
                     float owner = (float)resolve.Invoke(evaluatedClock, new[] { Snapshot(1.06f) });
                     control.AlterUpdate(owner); control.AlterLateUpdate();
                     var observed = evaluatedClock.LastObservation.Value;
+                    Check(!observed.HasDspTime && observed.ReadBeginDspTime == 0 && observed.ReadEndDspTime == 0,
+                        "Legacy samples retain absent DSP metadata without fabricating a measured epoch.");
                     Check(evaluatedClock.JoinedFrames == 1 && observed.SourceTime == 1.06f && observed.OwnerTime == owner &&
                         observed.SourceTime != observed.OwnerTime, "Actual Control joins evaluated owner while preserving raw source time.");
                     Check(observed.ClipName == "Artificial clock clip" && observed.ClipSampleCount == 1024 &&

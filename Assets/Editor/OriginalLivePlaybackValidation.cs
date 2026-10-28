@@ -20,6 +20,8 @@ using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
 [InitializeOnLoad]
 public static class OriginalLivePlaybackValidation
 {
+    // Explicit Editor diagnostics may attach to this single registered lifetime.
+    public static event Action<StreamingAudioCapture, Director, OriginalLiveAudioClock> AudioPcmAttached;
     const string Active = "OriginalLivePlaybackValidation.Active";
     static string output;
     static Result result;
@@ -242,6 +244,7 @@ public static class OriginalLivePlaybackValidation
             result.audioClockRequested = true; result.clockSource = "ExplicitCurrentViewerAudioTime";
             if (smoothingClock != null) result.clockSource = "ExplicitConsumedAudioMath_CommitAfterOwnerJoin";
             result.audioClockTailPolicy = SessionState.GetBool(Active + ".AudioTail", false) ? "ReleaseToExistingDirectorAtSourceStop" : "Hold";
+            if (pcmCapture != null) AudioPcmAttached?.Invoke(pcmCapture, director, audioClock);
         }
         provider.FrameReady += Observe;
         var canvas = new GameObject("Explicit Viewer preview").AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -290,6 +293,7 @@ public static class OriginalLivePlaybackValidation
                         readBeginTicks = observed.ReadBeginTicks, readEndTicks = observed.ReadEndTicks,
                         sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(),
                         audioSamples = observed.AudioSamples, sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime,
+                        hasDspTime = observed.HasDspTime, readBeginDspTime = observed.ReadBeginDspTime, readEndDspTime = observed.ReadEndDspTime,
                         completedCallbackSerial = pcmCapture.LastCompletedSerial,
                         sourceBits = Bits(observed.SourceTime), ownerBits = Bits(observed.OwnerTime),
                         previousOwnerBits = Bits(clocks[0].ComparisonOwnerTime), previousOwnerTime = clocks[0].ComparisonOwnerTime,
@@ -507,7 +511,7 @@ public static class OriginalLivePlaybackValidation
             result.pcmCallbacks = pcmSnapshot.callbacks.Length; result.pcmClockSamples = pcmSamples.Count;
             bool complete = pcmSnapshot.clipId != 0 && pcmSnapshot.reads > 100 && pcmSnapshot.inFlight == 0 &&
                 pcmSnapshot.decoderSamplesPerBlock > 0 && pcmSnapshot.decoderSampleCount == pcmSnapshot.clipSamples &&
-                pcmSnapshot.errors == 0 && pcmSnapshot.overlaps == 0 && pcmSnapshot.overflow == 0 &&
+                pcmSnapshot.errors == 0 && pcmSnapshot.observerErrors == 0 && pcmSnapshot.overlaps == 0 && pcmSnapshot.overflow == 0 &&
                 pcmSnapshot.duplicateAttachments == 0 && pcmSnapshot.callbacks.All(x => x.serial > 0 && !x.failed) &&
                 pcmSamples.Count == result.audioClockJoined && result.pcmFailures == 0;
             result.pcmComplete = complete;
@@ -531,6 +535,8 @@ public static class OriginalLivePlaybackValidation
         public long serial, readBeginTicks, readEndTicks;
         public int unityFrame, sourceId, clipId, audioSamples, completedCallbackSerial;
         public float sourceTime, ownerTime, previousOwnerTime;
+        public bool hasDspTime;
+        public double readBeginDspTime, readEndDspTime;
         public int sourceBits, ownerBits, previousOwnerBits, currentFrame, previousFrame;
         public int submissionSerial, inputVersion, baseCameraId, rightCameraId, leftCameraId, outputId, outputWidth, outputHeight;
     }

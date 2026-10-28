@@ -15,12 +15,15 @@ namespace Gallop.Live.Rendering
             public readonly float SourceTime;
             public readonly int SampledUnityFrame, AudioSamples;
             public readonly long ReadBeginTicks, ReadEndTicks;
+            public readonly bool HasDspTime;
+            public readonly double ReadBeginDspTime, ReadEndDspTime;
             public readonly string ClipName;
             public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Sample(Pending sample)
             { Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time;
               SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
               ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
+              HasDspTime = sample.HasDspTime; ReadBeginDspTime = sample.ReadBeginDspTime; ReadEndDspTime = sample.ReadEndDspTime;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -31,6 +34,8 @@ namespace Gallop.Live.Rendering
             public readonly AudioClip Clip;
             public readonly int SampledUnityFrame, AudioSamples;
             public readonly long ReadBeginTicks, ReadEndTicks;
+            public readonly bool HasDspTime;
+            public readonly double ReadBeginDspTime, ReadEndDspTime;
             public readonly float SourceTime, OwnerTime;
             public readonly string ClipName;
             public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
@@ -38,6 +43,7 @@ namespace Gallop.Live.Rendering
             { Selected = selected; Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time; OwnerTime = sample.OwnerTime;
               SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
               ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
+              HasDspTime = sample.HasDspTime; ReadBeginDspTime = sample.ReadBeginDspTime; ReadEndDspTime = sample.ReadEndDspTime;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -48,6 +54,8 @@ namespace Gallop.Live.Rendering
             internal readonly float Time, OwnerTime;
             internal readonly int UnityFrame, Samples;
             internal readonly long ReadBeginTicks, ReadEndTicks;
+            internal readonly bool HasDspTime;
+            internal readonly double ReadBeginDspTime, ReadEndDspTime;
             internal readonly string ClipName;
             internal readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             // Preserve existing explicit fixture construction. Zero means that
@@ -55,13 +63,18 @@ namespace Gallop.Live.Rendering
             internal Pending(AudioSource source, AudioClip clip, float time, int samples)
                 : this(source, clip, time, samples, 0, 0) { }
             internal Pending(AudioSource source, AudioClip clip, float time, int samples, long beginTicks, long endTicks)
+                : this(source, clip, time, samples, beginTicks, endTicks, false, 0, 0) { }
+            internal Pending(AudioSource source, AudioClip clip, float time, int samples, long beginTicks, long endTicks,
+                bool hasDspTime, double beginDspTime, double endDspTime)
             { Source = source; Clip = clip; Time = OwnerTime = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount;
               ReadBeginTicks = beginTicks; ReadEndTicks = endTicks;
+              HasDspTime = hasDspTime; ReadBeginDspTime = beginDspTime; ReadEndDspTime = endDspTime;
               ClipName = clip.name; ClipSampleCount = clip.samples; ClipFrequency = clip.frequency; ClipChannels = clip.channels; }
             internal Pending(Pending sample, float ownerTime)
             { Source = sample.Source; Clip = sample.Clip; Time = sample.Time; OwnerTime = ownerTime;
               Samples = sample.Samples; UnityFrame = sample.UnityFrame;
               ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
+              HasDspTime = sample.HasDspTime; ReadBeginDspTime = sample.ReadBeginDspTime; ReadEndDspTime = sample.ReadEndDspTime;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -78,6 +91,10 @@ namespace Gallop.Live.Rendering
         public long UnobservedFrames { get; private set; }
         public long RejectedFrames { get; private set; }
         public Observation? LastObservation { get; private set; }
+        // Optional diagnostics only; these values never enter clock arithmetic.
+        // A failed reader leaves the ordinary source/owner evaluation intact.
+        public Func<double> DiagnosticDspTimeReader { get; set; }
+        public long DiagnosticDspFailures { get; private set; }
 
         public OriginalLiveAudioClock(Director director, OriginalLiveContinuousProvider provider, Func<AudioSource> source)
             : this(director, provider, source, null) { }
@@ -103,16 +120,30 @@ namespace Gallop.Live.Rendering
             if (!current || !clip || !current.isPlaying || clip.loadState != AudioDataLoadState.Loaded)
             { HeldReads++; return null; }
             long beginTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            var dspReader = DiagnosticDspTimeReader;
+            double beginDspTime = 0, endDspTime = 0;
+            bool dspValid = TryReadDsp(dspReader, out beginDspTime);
             float time = current.time;
             if (float.IsNaN(time) || float.IsInfinity(time) || time < 0)
             { HeldReads++; return null; }
             // timeSamples is observed metadata; it is never converted into time.
             int audioSamples = current.timeSamples;
+            bool dspEndValid = TryReadDsp(dspReader, out endDspTime);
+            dspValid = dspValid && dspEndValid && endDspTime >= beginDspTime;
+            if (dspReader != null && !dspValid) DiagnosticDspFailures++;
             long endTicks = System.Diagnostics.Stopwatch.GetTimestamp();
-            var sample = new Pending(current, clip, time, audioSamples, beginTicks, endTicks);
+            var sample = new Pending(current, clip, time, audioSamples, beginTicks, endTicks,
+                dspValid, dspValid ? beginDspTime : 0, dspValid ? endDspTime : 0);
             if (ownerTime != null) return Resolve(sample);
             pending = sample; ReadCount++;
             return time;
+        }
+        static bool TryReadDsp(Func<double> reader, out double value)
+        {
+            value = 0;
+            if (reader == null) return false;
+            try { value = reader(); return !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0; }
+            catch { return false; }
         }
         float? Resolve(Pending sample)
         {
@@ -141,7 +172,7 @@ namespace Gallop.Live.Rendering
         }
         public void Dispose()
         {
-            if (disposed) return; disposed = true; pending = null; LastObservation = null;
+            if (disposed) return; disposed = true; pending = null; LastObservation = null; DiagnosticDspTimeReader = null;
             provider.FrameReady -= OnFrame;
             if (director && ReferenceEquals(director.OriginalLiveTimeProvider, read)) director.OriginalLiveTimeProvider = null;
         }

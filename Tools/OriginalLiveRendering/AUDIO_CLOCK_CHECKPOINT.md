@@ -1,5 +1,29 @@
 # 明示checkpointからの音声時計
 
+## getterから実command世代までの追加照合
+
+同一frameの実getter戻り値と直前stateから時計8成分を再計算し、ownerとrender parameterへ対応付けました。そのparameter内で記録元CommandBufferが別実体へコピーされ、contextへ登録される経路を自然呼出しで観測しています。実draw側の実行元・cursor・payloadは、このコピー先の記録と一致しました。既存の直接nested-call readerは拒否を保持し、コピー世代を使う別readerで限定1件を採用しています。異なるparameter、frame、thread、世代、記録内容、queue、readbackは拒否します。全writerや全lifetimeの証明にはしません。
+
+同じdrawの保存GPU入力によるViewer再描画は128画素RGBA完全一致でした。自然CPU入力からそのRGBを生成した比較や、原作とViewerの全面画面比較ではありません。原作時計とViewer自然3,180更新のsource bits・owner bits・整数frame対の完全一致は0件で、自然epochの契約は未成立です。先行する別runの時計・decoder・sample証拠を、同一runの観測へ混ぜていません。
+
+採取側の初回準備ではmetadata資格を要求する時点が誤っており、ARM前に終了しました。修正版は、関数identityを確認してから準備し、context metadataが成立してから観測を有効化します。現在getterを持つframeだけを描画採取へ採用し、getterの観測開始を既存parameterの有限区間へ合わせています。hook枠・読取・容量の上限と旧readerの拒否条件は維持しました。最終のown-process native検証はGPU／queue 67件とコピー／資格／unwind 27件、保存reader検証は20件PASSです。外側Pending、通常終了後の復元と実行時保持handle復旧の区別は維持します。
+
+## 任意のPCM／DSP処理段階観測
+
+`StreamingAudioCapture.ReadCompleted`は、既存readの完了記録とreadonly PCM viewを同期的に渡します。viewはcallback中だけ有効です。観測はreadと同じthread上で実行されます。音声callbackから呼ぶ場合は有限のcopy等に限定し、待機やfile I/Oを行わない呼出し側設計が必要です。観測例外は元のread例外と分離し、実行中のobserverをdrain済みにしません。公開試験は50件PASSです。
+
+viewは要求bufferの全体を指すため、有効なdecoder出力の範囲は`Callback.returned`と明示したchannel数・単位で確認します。EOFや部分readの残りを実PCMとして採用しません。
+
+`OriginalLiveAudioClock.DiagnosticDspTimeReader`は任意登録です。同じ実sourceの`time`／`timeSamples`読取り前後にdouble値を保存し、欠落・例外・負値・非有限値・逆順は利用不能とします。この診断値をowner時計の計算に使いません。旧Pending生成経路はDSP観測なしを保持し、既存APIと診断未登録時の処理を維持します。公開Control／GPU試験はBuilt-in／URP14合計544件PASSで、明示時計による人工replay 4,096画素の一致を含みます。
+
+私有filter観測では、選択した2区間内で非無音373窓のPCM float byteが一意に一致し、1窓は一致なしとして拒否しました。PCM照合器の人工16件はbranchを含めPASSです。対応する現在sample→owner→最終submissionは194更新ですが、そのうちfilter観測完了がsource読取りより前なのは65更新です。129更新は先後関係が逆で、同じ処理段階とは認定しません。原作の既知短区間内には今回もowner観測がありません。
+
+UnityのDSP時刻は処理sampleを基にした時計で、audio filterはaudio threadで呼ばれます。この観測をスピーカー出力位置や原作の同期APIのepochへ読み替えません。[Unity 2022.3 DSP時刻](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/AudioSettings-dspTime.html)、[audio filter callback](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/MonoBehaviour.OnAudioFilterRead.html)を参照してください。
+
+142秒の私有filter試験、診断未登録の現ソース試験、変更前commitの比較試験はいずれもkey網羅10/12で全体Failedです。終端・Viewer復帰・fault 0と、この受入未達を分離します。変更前5ファイルはgit blobと照合して使用し、試験後は現在ソースの退避hashへ復元しました。網羅不足の原因は未確定であり、今回の追加が原因という判定もしていません。以前の6,591描画＝音声6,429＋tail 162の成功を上書きしません。
+
+`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`を維持します。通常UIへの自動適用、時刻補正、最近傍frame採用は追加していません。
+
 `OriginalLiveSmoothingClock` は、`OriginalLiveClockMath` の結果を実Controlのowner更新へ結び付ける任意登録です。初期stateとParametersは呼出し側がすべて明示します。原作の開始epochやPause／Seekのreset規則を推定しません。
 
 計算した次stateは一旦保留します。同じ音声source・clip・Unity frame・sample・owner時刻が `OriginalLiveAudioClock.LastObservation` へ結合された場合だけ、`CommittedState` を進めます。owner不一致、更新未採用、登録置換、clip切替、Disposeでは保留値を破棄します。GPU側の描画成功とは別に、Controlへの採用を確定条件とします。

@@ -8,6 +8,10 @@ namespace UmaMusumeAudio
     // Positions are decoder-stream bytes, not speaker positions or an audio epoch.
     public sealed class StreamingAudioCapture : IDisposable
     {
+        // The view is valid only for this synchronous observation. It cannot
+        // modify the audio data or escape through a managed field.
+        public delegate void ReadCompletedHandler(Callback callback, ReadOnlySpan<float> samples);
+        public event ReadCompletedHandler ReadCompleted;
         [Serializable]
         public struct Callback
         {
@@ -23,7 +27,7 @@ namespace UmaMusumeAudio
             public int waveId, clipId, clipSamples, channels, frequency, bytesPerSample;
             public int decoderDelay, decoderPadding, decoderSamplesPerBlock, decoderSampleCount;
             public long streamLengthBytes, timestampFrequency;
-            public int reads, sets, errors, overlaps, overflow, duplicateAttachments, inFlight;
+            public int reads, sets, errors, overlaps, overflow, duplicateAttachments, inFlight, observerErrors;
             public bool closed;
             public Callback[] callbacks;
         }
@@ -35,6 +39,7 @@ namespace UmaMusumeAudio
         readonly int[] published;
         int enabled = 1, attached, next, last = -1, active;
         int reads, sets, errors, overlaps, overflow, duplicates;
+        int observerErrors, activeObservers;
         int clipId, clipSamples, channels, frequency, bytesPerSample;
         int decoderDelay, decoderPadding, decoderSamplesPerBlock, decoderSampleCount;
         long length;
@@ -134,7 +139,22 @@ namespace UmaMusumeAudio
             bool recording = Begin(1, data.Length, out var row, out int index);
             try { int returned = read(data); if (recording) row.returned = returned; }
             catch { if (recording) row.failed = true; throw; }
-            finally { if (recording) Complete(ref row, index); }
+            finally
+            {
+                if (recording)
+                {
+                    var observer = row.failed ? null : ReadCompleted;
+                    if (observer != null) Interlocked.Increment(ref activeObservers);
+                    try
+                    {
+                        Complete(ref row, index);
+                        if (observer != null)
+                            try { observer(row, data); }
+                            catch { Interlocked.Increment(ref observerErrors); }
+                    }
+                    finally { if (observer != null) Interlocked.Decrement(ref activeObservers); }
+                }
+            }
         }
 
         public void SetPosition(int sample)
@@ -164,8 +184,8 @@ namespace UmaMusumeAudio
                 decoderSamplesPerBlock = decoderSamplesPerBlock, decoderSampleCount = decoderSampleCount,
                 timestampFrequency = Stopwatch.Frequency, reads = Volatile.Read(ref reads), sets = Volatile.Read(ref sets),
                 errors = Volatile.Read(ref errors), overlaps = Volatile.Read(ref overlaps), overflow = Volatile.Read(ref overflow),
-                duplicateAttachments = Volatile.Read(ref duplicates), inFlight = Volatile.Read(ref active),
-                closed = true, callbacks = copy };
+                duplicateAttachments = Volatile.Read(ref duplicates), inFlight = Volatile.Read(ref active) + Volatile.Read(ref activeObservers),
+                observerErrors = Volatile.Read(ref observerErrors), closed = true, callbacks = copy };
         }
 
         public void Dispose()

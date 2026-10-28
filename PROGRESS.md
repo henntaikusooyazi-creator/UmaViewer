@@ -4,6 +4,24 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## PCM内容と音声処理段階の限定観測
+
+原作run89では、実getter戻り値→平滑化8成分→owner→render parameter内のCommandBufferコピー→実行世代→一意queue範囲→実GPU drawを、同一frameの1件として接続しました。コピー元とコピー先の記録内容、context内の対応entry、実行cursorと消費payloadを照合しています。消費payloadはparameter開始時の有効stream範囲より後にありました。旧来の「drawがparameter呼出し内に直接nestする」というreaderは拒否のまま保持し、遅延実行の別の証拠として扱います。全writerや全lifetimeの閉包ではありません。
+
+この同じdrawの保存入力をViewerで再描画し、Built-in D3D11で128/128画素RGBA完全一致、invalid sample 0を確認しました。先行run88もコピー世代の1件と128画素一致が成立しましたが、実getterの同一更新joinは未成立でした。両runの値を混ぜて1件にしていません。run89の時計tupleとViewerの自然3,180更新の完全一致は0件、整数frame対だけでも0件で、自然epoch・同一frame全面RGBは未成立です。
+
+明示登録したstreaming観測へ、実read完了後のPCMを同期的に見るreadonly callbackを追加しました。観測例外は再生例外と分離し、callback実行中はdrain済みにしません。音声clockには任意のDSP時刻readerを追加し、実際の`time`／`timeSamples`読取り前後を記録できます。未登録時にはDSP APIを呼ばず、観測値をowner時計の算術へ入れません。
+
+私有の実楽曲試験では、2区間の生成PCMと実音声filter入力を厳密なfloat byte比較で対応付け、非無音373窓が一意に一致しました。残る1窓は一致なしとして拒否しています。両区間でDSP/sample対応が同じでしたが、実スピーカー位置や原作の音声epochを証明するものではありません。内容が対応するsample位置と自然owner→最終submissionは194更新で結合でき、そのうちfilter観測完了が現在sample読取りに先行するのは65更新です。残る129更新を処理済み音声の証拠へ昇格しません。原作の既知短区間内のowner観測は0件のままです。
+
+この試験は142秒で自然終端・Viewer復帰し、3,301描画＝音声平滑化3,217＋明示tail 84、fault・例外0でした。ただし期待する12 key中10しか観測できず、再生全体の受入は **Failed** のままです。公開streaming試験50/50、明示時計を含むControl／GPU試験544/544、人工内部replay 4,096画素RGBA一致は別に確認しました。先行する6,591描画＝音声6,429＋tail 162の成功記録と合算しません。
+
+診断未登録の現在ソースも142秒・3,261描画（音声3,180＋tail 81）・fault/例外0で終端へ到達しましたが、key網羅10/12でFailedです。比較用に5ファイルだけを変更前commitのblobへ一時置換した再生でも3,251描画（音声3,174＋tail 77）・key 10/12・Failedでした。元の変更は退避hashへ復元済みです。今回の追加だけを原因とする証拠は得られず、網羅不足の原因は未確定です。受入条件は緩めていません。
+
+初回の追加採取は、早期shader準備とmetadata資格化の順序を取り違えてARM前に停止しました。準備時の関数identity確認と、観測有効化時のcontext資格を分け、開始順序のfixtureを追加しました。採取器の28 hook枠・容量・読取上限を維持しています。修正後も外側の歴史的Pendingとmetadata不変条件を保持し、native解除・drain・通常WM_CLOSE後の所有配備復元を実行時復旧成功へ読み替えません。
+
+`SourceToViewerClockContract=false`、`OriginalVerified=false`、`runtime_contract=false`、`Phase257cause=Unknown`を維持します。PCM本文、原作のpointer・命令・実値、私有filterと採取器は公開しません。
+
 ## 自然音声のowner対と最終submissionの観測
 
 `-AudioPcm`のEditor観測に、現在の音声値・owner時刻対・整数frame対と、同じselected objectの最終submissionを保存する経路を追加しました。出力RTと現在のchannel clockも照合し、古いdrawや異なるownerの値を保存しません。通常UI、時計算術、renderer本体は変更していません。

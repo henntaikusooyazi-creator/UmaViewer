@@ -100,12 +100,42 @@ public static class StreamingAudioCaptureValidation
             { capture.Dispose(); Check(StreamingAudioCapture.TryAttach("next", 0, 1, 2, 1, 2, () => 0, _ => 0, _ => { }) == next, "Old disposer cannot remove new registration."); }
         }
     }
+    static void CompletedReadObservation()
+    {
+        long position = 0; int observed = 0;
+        bool positions = false, values = false, pendingObserver = false;
+        using (var capture = StreamingAudioCapture.Register("read-view", 0))
+        {
+            StreamingAudioCapture.TryAttach("read-view", 0, 1, 2, 100, 100, () => position,
+                data => { data[0] = .125f; data[1] = -.75f; position += 4; return 2; }, _ => { });
+            StreamingAudioCapture.ReadCompletedHandler observer = (callback, samples) =>
+            {
+                observed++;
+                positions = callback.beforeBytes == 0 && callback.afterBytes == 4 && callback.returned == 2;
+                values = samples.Length == 2 && samples[0] == .125f && samples[1] == -.75f;
+                pendingObserver = capture.StopAndSnapshot().inFlight > 0;
+                throw new InvalidOperationException("Artificial diagnostic failure");
+            };
+            capture.ReadCompleted += observer;
+            var data = new float[2]; capture.Read(data);
+            var saved = capture.StopAndSnapshot();
+            Check(positions, "Read-only view is published with completed source positions.");
+            Check(values, "View retains actual returned PCM values.");
+            Check(pendingObserver, "A running observer cannot be accepted as drained.");
+            Check(observed == 1 && data[0] == .125f && data[1] == -.75f, "Observer failure preserves returned samples.");
+            Check(saved.observerErrors == 1 && saved.errors == 0 && saved.reads == 1 && saved.inFlight == 0,
+                "Diagnostic exceptions remain separate from source failures.");
+            capture.Read(data);
+            Check(observed == 1, "Disposed observation is not invoked by subsequent ordinary reads.");
+            capture.ReadCompleted -= observer;
+        }
+    }
     public static void Run()
     {
         var args = Environment.GetCommandLineArgs(); int at = Array.IndexOf(args, "-integrationOutput");
         if (at < 0 || at + 1 >= args.Length) throw new ArgumentException("External output required.");
         string output = args[at + 1]; Directory.CreateDirectory(output); report = new Report(); int exit = 0;
-        try { Transparency(); Boundaries(); FailuresAndConcurrency(); report.status = "StreamingAudioCaptureValidated_TestOnly"; }
+        try { Transparency(); Boundaries(); FailuresAndConcurrency(); CompletedReadObservation(); report.status = "StreamingAudioCaptureValidated_TestOnly"; }
         catch (Exception e) { report.status = "Failed"; report.failure = e.ToString(); Debug.LogException(e); exit = 1; }
         finally { File.WriteAllText(Path.Combine(output, "integration-summary.json"), JsonUtility.ToJson(report, true)); EditorApplication.Exit(exit); }
     }
