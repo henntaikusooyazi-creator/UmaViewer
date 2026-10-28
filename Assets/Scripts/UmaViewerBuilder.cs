@@ -1055,14 +1055,25 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
             int bytesPerSample = stream.WaveFormat.BitsPerSample / 8;
             int sampleRate = stream.WaveFormat.SampleRate;
 
-            AudioClip clip = AudioClip.Create(
+            var capture = StreamingAudioCapture.TryAttach(awb.Name, wave.WaveId, channels, bytesPerSample,
+                sampleRate, stream.Length, () => stream.Position,
+                data => sampleProvider.Read(data, 0, data.Length),
+                position => stream.Position = position * channels * bytesPerSample);
+            AudioClip clip = capture == null ? AudioClip.Create(
                 Path.GetFileNameWithoutExtension(awb.Name) + "_" + wave.WaveId.ToString(),
                 (int)(stream.Length / channels / bytesPerSample),
                 channels,
                 sampleRate,
                 true,
                 data => sampleProvider.Read(data, 0, data.Length),
-                position => stream.Position = position * channels * bytesPerSample);
+                position => stream.Position = position * channels * bytesPerSample) : AudioClip.Create(
+                Path.GetFileNameWithoutExtension(awb.Name) + "_" + wave.WaveId.ToString(),
+                (int)(stream.Length / channels / bytesPerSample), channels, sampleRate, true,
+                capture.Read, capture.SetPosition);
+            capture?.BindClip(clip.GetInstanceID(), clip.samples, clip.channels, clip.frequency);
+            if (capture != null)
+                capture.DescribeDecoder(stream.Info.EncoderDelay, stream.Info.EncoderPadding,
+                    stream.Info.SamplesPerBlock, stream.Info.SampleCount);
 
             clips.Add(clip);
         }

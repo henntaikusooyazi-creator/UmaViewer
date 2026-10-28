@@ -7,6 +7,7 @@ param(
     [ValidateRange(-1, 7)][int] $LeftTrack = -1,
     [switch] $FrameInputs,
     [switch] $AudioClock,
+    [switch] $AudioPcm,
     [string] $AudioClockCheckpoint,
     [switch] $AudioClockTailToExistingDirector,
     [ValidateRange(240, 600)][int] $MaximumWallSeconds = 240
@@ -14,6 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($AudioClockTailToExistingDirector -and !$AudioClock) { throw 'An explicit audio clock is required for the tail policy.' }
 if ($AudioClockCheckpoint -and !$AudioClock) { throw 'A clock checkpoint requires the explicit audio clock.' }
+if ($AudioPcm -and !$AudioClock) { throw 'PCM observation requires the explicit audio clock.' }
 if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $output = [IO.Path]::GetFullPath($OutputPath)
@@ -55,6 +57,7 @@ try {
     $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
     if ($FrameInputs) { $arguments += @('-liveFrameInputs', 'true') }
     if ($AudioClock) { $arguments += @('-liveAudioClock', 'true') }
+    if ($AudioPcm) { $arguments += @('-liveAudioPcm', 'true') }
     if ($AudioClockCheckpoint) { $arguments += @('-liveClockCheckpoint', ('"' + $checkpoint + '"')) }
     if ($AudioClockTailToExistingDirector) { $arguments += @('-liveAudioClockTailToExistingDirector', 'true') }
     $arguments += @('-liveMaximumWallSeconds', $MaximumWallSeconds)
@@ -91,5 +94,9 @@ if ($FrameInputs) {
 if ($AudioClockCheckpoint -and (!$summary.smoothingRequested -or $summary.smoothingCommitted -ne $summary.audioClockJoined -or
         $summary.smoothingDiscarded -ne 0 -or $summary.smoothingHeld -ne 0)) {
     throw 'The explicit smoothing checkpoint did not commit exclusively through joined updates.'
+}
+if ($AudioPcm -and (!$summary.pcmRequested -or !$summary.pcmComplete -or $summary.pcmFailures -ne 0 -or
+        $summary.pcmClockSamples -ne $summary.audioClockJoined)) {
+    throw 'The selected streaming callbacks did not join the current clip and owner observations.'
 }
 Write-Output "Natural Viewer playback PASS: $($summary.validOwnerFrames) owner updates, $($summary.renderedFrames) generated frames; $($summary.warmupLateOnlyFrames) initial late-only frames held."

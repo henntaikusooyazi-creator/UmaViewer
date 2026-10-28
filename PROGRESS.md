@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## Viewerの実PCM callbackと現在再生位置の対応
+
+原作run78の次の境界として、Viewerの既存伴奏読取りに明示登録する上限付き観測を追加しました。追加のdecodeやPCM本文保存を行わず、実read／set-position callbackの要求・戻り件数・stream前後位置を記録します。未登録時の既存callbackと時計は維持します。
+
+最終ソースでmusic1001を142秒自然完走し、6,005描画＝音声平滑化5,874更新＋明示した既存Director時計のtail 131更新。左右同時50/50更新、fault・例外・clip不一致・観測overflowは0でした。3,459 callback（read 3,458、set-position 1）を取得し、5,874/5,874の現在`timeSamples`が、同じclipで読取り完了済みの論理sample範囲に属します。`time`も各`timeSamples / frequency`のfloat32値と一致しました。callbackの先読み位置を現在再生位置へ置換していません。
+
+現在Viewerがロードした伴奏AWBの内容hashとdecoder情報が原作run78の保存照合に一致し、原作の既知128 sample全体がViewerの1 callback範囲に対応しました。ただし、この区間内の現在sampleをViewerのowner更新が直接観測した回数は0です。前後の実更新で区間を挟めていますが、原作同期時刻との同一瞬間・同一draw frame・speaker位置の証明ではありません。
+
+公開人工callback検証44/44、既存Control／GPU結合498/498 PASS。保存結果用の限定Python検証32件とRuff PASS。新規原作runは0件で、旧Pendingは保持します。元の内部constructorを置換したため既存reflection fixtureが一度失敗しましたが、旧constructorを残す修正後に498件を再実行しました。成功ブランチ、Core13／原作4の保護、DLL未stage削除を維持します。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` は変更しません。[観測仕様と再現手順](Tools/OriginalLiveRendering/AUDIO_PCM_OBSERVATION.md)を参照してください。
+
 ## 同一consumer座標から原作の実同期時刻まで
 
 run78では、同一Song・資源世代・decoder lifetimeのファイル位置付きblock、明示range/current state、直後128 sample、同じoutput bufferのwriter・queue・consumerに加え、現在の累積消費量・held値・counter、自然sample照会、同期cache生成、実同期時刻APIの戻り値までを**同一runの1本**で接続しました。独立bufferは1件、既知出力を含むconsumerは1呼出し、その後の介在consumerは3呼出し、同期側は9種類の記録です。nested callや再評価を独立観測へ加算しません。

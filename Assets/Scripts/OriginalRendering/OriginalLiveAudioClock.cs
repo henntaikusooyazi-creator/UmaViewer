@@ -14,11 +14,13 @@ namespace Gallop.Live.Rendering
             public readonly AudioClip Clip;
             public readonly float SourceTime;
             public readonly int SampledUnityFrame, AudioSamples;
+            public readonly long ReadBeginTicks, ReadEndTicks;
             public readonly string ClipName;
             public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Sample(Pending sample)
             { Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time;
               SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
+              ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -28,12 +30,14 @@ namespace Gallop.Live.Rendering
             public readonly AudioSource Source;
             public readonly AudioClip Clip;
             public readonly int SampledUnityFrame, AudioSamples;
+            public readonly long ReadBeginTicks, ReadEndTicks;
             public readonly float SourceTime, OwnerTime;
             public readonly string ClipName;
             public readonly int ClipSampleCount, ClipFrequency, ClipChannels;
             internal Observation(OriginalLiveTimelineBridge.Frame selected, Pending sample)
             { Selected = selected; Source = sample.Source; Clip = sample.Clip; SourceTime = sample.Time; OwnerTime = sample.OwnerTime;
               SampledUnityFrame = sample.UnityFrame; AudioSamples = sample.Samples;
+              ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -43,14 +47,21 @@ namespace Gallop.Live.Rendering
             internal readonly AudioClip Clip;
             internal readonly float Time, OwnerTime;
             internal readonly int UnityFrame, Samples;
+            internal readonly long ReadBeginTicks, ReadEndTicks;
             internal readonly string ClipName;
             internal readonly int ClipSampleCount, ClipFrequency, ClipChannels;
+            // Preserve existing explicit fixture construction. Zero means that
+            // no runtime timestamp bracket was measured for this sample.
             internal Pending(AudioSource source, AudioClip clip, float time, int samples)
+                : this(source, clip, time, samples, 0, 0) { }
+            internal Pending(AudioSource source, AudioClip clip, float time, int samples, long beginTicks, long endTicks)
             { Source = source; Clip = clip; Time = OwnerTime = time; Samples = samples; UnityFrame = UnityEngine.Time.frameCount;
+              ReadBeginTicks = beginTicks; ReadEndTicks = endTicks;
               ClipName = clip.name; ClipSampleCount = clip.samples; ClipFrequency = clip.frequency; ClipChannels = clip.channels; }
             internal Pending(Pending sample, float ownerTime)
             { Source = sample.Source; Clip = sample.Clip; Time = sample.Time; OwnerTime = ownerTime;
               Samples = sample.Samples; UnityFrame = sample.UnityFrame;
+              ReadBeginTicks = sample.ReadBeginTicks; ReadEndTicks = sample.ReadEndTicks;
               ClipName = sample.ClipName; ClipSampleCount = sample.ClipSampleCount;
               ClipFrequency = sample.ClipFrequency; ClipChannels = sample.ClipChannels; }
         }
@@ -91,11 +102,14 @@ namespace Gallop.Live.Rendering
             var current = source(); var clip = current ? current.clip : null;
             if (!current || !clip || !current.isPlaying || clip.loadState != AudioDataLoadState.Loaded)
             { HeldReads++; return null; }
+            long beginTicks = System.Diagnostics.Stopwatch.GetTimestamp();
             float time = current.time;
             if (float.IsNaN(time) || float.IsInfinity(time) || time < 0)
             { HeldReads++; return null; }
             // timeSamples is observed metadata; it is never converted into time.
-            var sample = new Pending(current, clip, time, current.timeSamples);
+            int audioSamples = current.timeSamples;
+            long endTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            var sample = new Pending(current, clip, time, audioSamples, beginTicks, endTicks);
             if (ownerTime != null) return Resolve(sample);
             pending = sample; ReadCount++;
             return time;

@@ -10,6 +10,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UmaMusumeAudio;
 using Object = UnityEngine.Object;
 using M = Gallop.Live.Rendering.OriginalCompositeProducerMath;
 using A = Gallop.Live.Rendering.OriginalCompositeCueAdapter;
@@ -41,6 +42,9 @@ public static class OriginalLivePlaybackValidation
     static OriginalNaturalPostProcessProbe frameInputs;
     static OriginalLiveAudioClock audioClock;
     static OriginalLiveSmoothingClock smoothingClock;
+    static StreamingAudioCapture pcmCapture;
+    static StreamingAudioCapture.Snapshot pcmSnapshot;
+    static readonly List<PcmClockSample> pcmSamples = new List<PcmClockSample>();
     static string Argument(string name) => Environment.GetCommandLineArgs().SkipWhile(x => x != name).Skip(1).FirstOrDefault();
     static OriginalLivePlaybackValidation()
     {
@@ -78,6 +82,9 @@ public static class OriginalLivePlaybackValidation
         SessionState.SetString(Active + ".Profile", Path.GetFullPath(profile));
         SessionState.SetBool(Active + ".FrameInputs", Argument("-liveFrameInputs") == "true");
         SessionState.SetBool(Active + ".AudioClock", Argument("-liveAudioClock") == "true");
+        bool pcm = Argument("-liveAudioPcm") == "true";
+        if (pcm && Argument("-liveAudioClock") != "true") throw new ArgumentException("PCM observation requires the explicit audio clock.");
+        SessionState.SetBool(Active + ".AudioPcm", pcm);
         string checkpoint = Argument("-liveClockCheckpoint");
         if (checkpoint != null)
         {
@@ -153,6 +160,19 @@ public static class OriginalLivePlaybackValidation
             throw new InvalidOperationException("Selected local preload bounds or availability failed");
         UmaViewerUI.Instance.isRequireStage = true;
         UmaViewerUI.Instance.isRecordVMD = false;
+        if (SessionState.GetBool(Active + ".AudioPcm", false))
+        {
+            var audio = UmaViewerAudio.getSoundPath(string.Format("sound/l/{0}/snd_bgm_live_{0}_oke_01", id));
+            if (audio.awb == null) throw new InvalidOperationException("Selected accompaniment asset missing.");
+            result.pcmAssetPath = audio.awb.FilePath;
+            if (new FileInfo(result.pcmAssetPath).Length > 64 * 1024 * 1024)
+                throw new InvalidOperationException("Selected accompaniment hash input exceeds the diagnostic limit.");
+            using (var file = File.OpenRead(result.pcmAssetPath))
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                result.pcmAssetSha256 = BitConverter.ToString(hash.ComputeHash(file)).Replace("-", "").ToLowerInvariant();
+            pcmCapture = StreamingAudioCapture.Register(audio.awb.Name, 0);
+            result.pcmRequested = true;
+        }
         UmaViewerBuilder.Instance.LoadLive(song, slots, false, Attach);
     }
     static void Attach(Director loaded)
@@ -246,6 +266,16 @@ public static class OriginalLivePlaybackValidation
                 if (smoothingClock != null && (smoothingClock.CommittedFrames != audioClock.JoinedFrames ||
                     smoothingClock.CommittedState.PreviousSourceTime != observed.SourceTime ||
                     smoothingClock.CommittedState.CurrentTime != observed.OwnerTime)) result.audioClockFailures++;
+                if (pcmCapture != null)
+                {
+                    if (!pcmCapture.MatchesClip(observed.Clip.GetInstanceID()) || pcmSamples.Count >= 16384)
+                        result.pcmFailures++;
+                    else pcmSamples.Add(new PcmClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
+                        readBeginTicks = observed.ReadBeginTicks, readEndTicks = observed.ReadEndTicks,
+                        sourceId = observed.Source.GetInstanceID(), clipId = observed.Clip.GetInstanceID(),
+                        audioSamples = observed.AudioSamples, sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime,
+                        completedCallbackSerial = pcmCapture.LastCompletedSerial });
+                }
                 if (result.audioClockSamples.Count < 192 && (result.audioClockSamples.Count == 0 || frame.Selected.Serial % 60 == 0))
                     result.audioClockSamples.Add(new AudioClockSample { serial = frame.Selected.Serial, unityFrame = observed.SampledUnityFrame,
                         sourceTime = observed.SourceTime, ownerTime = observed.OwnerTime, audioSamples = observed.AudioSamples, clipFrequency = observed.ClipFrequency,
@@ -426,6 +456,11 @@ public static class OriginalLivePlaybackValidation
         File.WriteAllText(Path.Combine(output, "playback.private.json"), JsonUtility.ToJson(result, true));
         File.WriteAllText(Path.Combine(output, "samples.private.json"), JsonUtility.ToJson(new Samples { rows = samples.ToArray() }, true));
         frameInputs?.Save(output);
+        if (pcmSnapshot != null)
+        {
+            File.WriteAllText(Path.Combine(output, "pcm-callbacks.private.json"), JsonUtility.ToJson(pcmSnapshot, true));
+            File.WriteAllText(Path.Combine(output, "pcm-clock.private.json"), JsonUtility.ToJson(new PcmClockSamples { rows = pcmSamples.ToArray() }, true));
+        }
     }
     static void UpdateSmoothingEvidence()
     {
@@ -442,6 +477,18 @@ public static class OriginalLivePlaybackValidation
         result.failure = failure; result.status = failure == null ? "NaturalViewerPlaybackCompleted" : "Failed";
         result.playbackWallSeconds = playbackStarted > 0 ? EditorApplication.timeSinceStartup - playbackStarted : 0;
         if (provider != null) { result.providerFaults = provider.Bridge.FaultCount + provider.ConsumerFaultCount; }
+        if (pcmCapture != null)
+        {
+            pcmSnapshot = pcmCapture.StopAndSnapshot();
+            result.pcmCallbacks = pcmSnapshot.callbacks.Length; result.pcmClockSamples = pcmSamples.Count;
+            bool complete = pcmSnapshot.clipId != 0 && pcmSnapshot.reads > 100 && pcmSnapshot.inFlight == 0 &&
+                pcmSnapshot.decoderSamplesPerBlock > 0 && pcmSnapshot.decoderSampleCount == pcmSnapshot.clipSamples &&
+                pcmSnapshot.errors == 0 && pcmSnapshot.overlaps == 0 && pcmSnapshot.overflow == 0 &&
+                pcmSnapshot.duplicateAttachments == 0 && pcmSnapshot.callbacks.All(x => x.serial > 0 && !x.failed) &&
+                pcmSamples.Count == result.audioClockJoined && result.pcmFailures == 0;
+            result.pcmComplete = complete;
+            if (!complete) { result.status = "Failed"; result.failure = failure ?? "Bounded streaming observation incomplete"; }
+        }
         UpdateSmoothingEvidence(); smoothingClock?.Dispose();
         channelEvidence?.Dispose(); frameInputs?.Dispose(); audioClock?.Dispose(); preview?.Dispose(); provider?.Dispose();
         if (director && cameraHandler != null) director._liveTimelineControl.OnUpdateCameraSwitcher -= cameraHandler;
@@ -453,6 +500,8 @@ public static class OriginalLivePlaybackValidation
     [Serializable] class Sample { public long serial; public int keyFrame, leftKeyFrame; public float currentTime, comparisonTime, fade, leftFade; public bool enabled, leftEnabled; public string renderStatus; }
     [Serializable] class ClockCheckpoint { public string schema, smoothing; public float[] state, parameters; }
     [Serializable] class AudioClockSample { public long serial; public int unityFrame, audioSamples, clipFrequency, clipSamples, clipChannels, sourceId, clipId, renderedCount; public string clipName; public float sourceTime, ownerTime; }
+    [Serializable] class PcmClockSamples { public PcmClockSample[] rows; }
+    [Serializable] class PcmClockSample { public long serial, readBeginTicks, readEndTicks; public int unityFrame, sourceId, clipId, audioSamples, completedCallbackSerial; public float sourceTime, ownerTime; }
     [Serializable] class Result
     {
         public string status = "Starting", unity, graphics, failure, firstException;
@@ -467,6 +516,9 @@ public static class OriginalLivePlaybackValidation
         public bool nativePhysicsSkipped, audioPlayingObserved, finalImage, middleImage, naturalExitObserved;
         public bool channelEvidenceCollected;
         public bool audioClockRequested;
+        public bool pcmRequested, pcmComplete;
+        public string pcmAssetPath, pcmAssetSha256;
+        public int pcmFailures, pcmCallbacks, pcmClockSamples;
         public long audioClockReads, audioClockJoined, audioClockHeld, audioClockRejected;
         public bool smoothingRequested;
         public string clockCheckpoint;

@@ -1,5 +1,28 @@
 # Song cueからwave・PCM先頭への限定対応
 
+## Viewer実callbackと論理sample座標
+
+run78後、Viewerだけを実行して既存の`LoadAudio`経路を観測しました。登録対象は選択した伴奏の明示waveだけです。readは従来sample providerを1回呼び、set-positionも既存代入を1回実行します。記録は固定容量で、audio callback内にUnity API、file I/O、PCM本文保存を追加しません。生成中に発生するcallbackもclip返却前の同じ観測tokenへ記録し、返却後に実clip identityを結びます。
+
+| 対象 | 最終ソースの実測 |
+| --- | --- |
+| 自然再生／描画 | 142秒、6,005/6,005、自然終端・Viewer復帰 |
+| 音声平滑化→owner | 5,874更新でstate確定、discard／hold／不一致0 |
+| 明示した既存時計tail | 131更新。原作の音声終了処理とはしない |
+| 伴奏callback | 3,459件＝read 3,458＋set-position 1 |
+| 現在sample→完了済みcallback範囲 | 同じclipで5,874/5,874 |
+| 現在timeとsample位置 | sample/frequencyのfloat32値と5,874/5,874一致 |
+| 左右同時描画 | 50/50更新 |
+| 例外・provider／render fault・overflow・重複attach | 0 |
+
+callbackの実戻り件数とstream前後byte位置を直接照合しました。現在decoderの既存logical Position計算、現在delay／block/sample情報、`AudioClip.Create`の長さとchannel数を分離して保持しています。sample位置と`time`は同じ採用更新の読取り前後timestampで囲み、非atomicな2 getterを同時readと呼びません。timestampはcallbackと比較するための診断情報で、再生時計へ入力しません。
+
+現在ロードしたAWBのSHA-256とdecoder情報がrun78の保存資産照合と一致します。原作の既知128 sampleは、Viewerの同じ論理座標を持つ1 callback範囲に包含されました。一方、自然owner観測はこの短い区間を前後で挟み、区間内そのものの観測は0件です。別run間の同じsample座標という限定対応であり、原作同期cacheの補間値を`sample/rate`へ置換したり、現在のViewer sampleと原作のGPU frameを同一視したりしません。音声PCM本文の一致やspeaker位置も未証明です。
+
+人工callback44/44、既存Control／GPU498/498 PASS。保存結果用Python32件・Ruff PASS、branch coverageは90%。未通過はCLI orchestrationとEOF分岐の一部で、実CLIは保存済み自然観測の別実行でも成功しています。C#の最初の結合検証は既存reflection fixtureのconstructor互換性漏れで失敗し、旧constructorを保持して再実行しました。元の失敗結果も保持します。
+
+新規原作runは0件、Core13・原作4はhash不変。通常UI・物理・既存時計・成功ブランチ・未stageのDLL削除を維持します。原作側のhistorical Pendingを今回のViewer成功へ置換しません。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`を維持します。次の境界は、同じ論理座標から原作の同期cache／getter消費段階とViewerのowner更新段階を対応させ、対象draw frameを選ぶことです。[公開観測APIと実行方法](AUDIO_PCM_OBSERVATION.md)を参照してください。
+
 ## 同一consumer座標から原作の実同期時刻まで
 
 ### 同一runで成立した1本の接続
