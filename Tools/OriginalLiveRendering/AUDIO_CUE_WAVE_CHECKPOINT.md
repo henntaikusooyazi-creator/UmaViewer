@@ -380,3 +380,32 @@ DLLサイズ上限超過は配備前に拒否し、重複snapshotと専用版の
 source・証拠・再現手順を上限付きdurable manifestに保存し、全archive hashを検査しました。元temp・ゲーム原本へのreadを拒否した保存後再評価で、旧runの拒否と最終8件採用・packet対応2件・限定接続1件を再現しています。private値・命令・layout・UI画像は公開していません。
 
 次の有限edgeは、この実packetをsource queueへ渡したproducer、その入力read resourceと絶対位置の結合です。counter・rate・既知HCA値から補完しません。公開は2文書のみで、通常runtime・成功ブランチ・DLL未stage削除を維持し、既存498件・142秒Viewer再生・RGB比較は今回未再実行です。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
+
+## loaderの実ファイル位置・自然read・source queue packet
+
+本編の現在Song資源を起点に、実際のread要求と、完了packetをsource queueへ投入するproducerを限定採取しました。標準SDK関数の手動呼出し、PCM／符号化本文の保存、原作媒体コピーは行っていません。
+
+| 対象 | 最終runの結果と範囲 |
+| --- | --- |
+| 本編資源seed | 1件採用。要求までのresampler step遷移を保持 |
+| 自然read要求 | 2/2件採用。実offset・size・data・capacity・modeを保存 |
+| 完了source queue投入 | 2/2件採用。対象packet、stream、実callerを照合 |
+| input pool書込み | 同じ2packetの2/2件採用 |
+| 従来の全状態一致lineage | seedのstep差により0件を維持 |
+| 符号化byte輸送専用join | 要求→完了投入→書込み、2packet。sample単位の一致には使わない |
+| 現ファイルと選択AWB | loader保持pathの現ファイル内容hashとCore Wave範囲が一致 |
+| HCA上のbyte／block範囲 | 2要求をhash一致した資産metadataへ対応 |
+| OS handle・実読込み戻り値・packet本文一致 | 未取得／未証明 |
+| 同じpacketのdecoder消費・絶対sample原点・Viewer PCM epoch | 未成立 |
+
+各要求とproducer・writerは同じSong識別、現在の資源世代、source owner・queue・file wrapper・loader、packet pointer・版と実行順で対応します。先行seedにはresampler step差があるため、旧readerの全状態一致を成功へ変更していません。追加readerはseedの実poolと同じsource識別を確認する符号化byte輸送に範囲を限定し、要求以降には従来の資源一致条件を適用しています。step、counter、rateから位置やsample数を逆算していません。
+
+loader保持pathと対応するファイルは、通常終了後の読取専用hostで全内容hashを照合しました。既存のCore AWB readerを変更せず使用し、選択Wave範囲と宣言されたAWB内容hashへの一致を確認しています。要求offsetと保持loader baseからの低層位置は、同一buildの保存calleeで導出した値です。OSの実file handleや読込み完了byte列を直接観測した証明へは昇格しません。HCA範囲の対応も、decoderがそのblockを実際に消費した証拠とは区別します。
+
+run66・67の共有読取り上限による拒否は維持しました。補助時計／parameter観測停止だけでは解決せず、次にmode引数を64bit全体で比較していた採取器側の誤りを修正しました。原作命令の32bit書込み幅に合わせ、上位paddingが異なるfixtureを追加しています。run68の未ARM期限切れも別に保持し、待機期限や採取上限を延長していません。
+
+最終sourceの閉鎖native33件、事前Python518件、資源107件がPASS。追加輸送readerを含むPython528件、同reader22 statements・14 branches未通過0、Ruff PASSです。旧queue reader82 statements・26 branchesと資産範囲計算14 statementsの検証は独立保持。legacy producer26・buffer67・decoder28・origin56・encoded74は別カテゴリで、観測件数へ加算しません。保存先を移した再評価では全archive hashを照合し、元temp・ゲーム原本readを禁止したまま4 runの拒否・未ARM・最終採用と資産範囲を再現しました。
+
+最終runの外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` のままです。28 hook解除、remaining 0、drain、runtime／GPU code pins、通常WM_CLOSE後のprocess不在と所有配備復元は別判定です。Core13・原作4・proof259件のhash不変を確認しました。公開は2文書のみで、通常runtimeと成功ブランチ、DLL未stage削除は保持しています。既存498件・142秒Viewer再生・RGB比較は再実行していません。
+
+次は同じファイル位置付きpacketからpool取得とdecoder block消費への接続です。今回の2packetを過去runのdecoder観測と同一buffer扱いにせず、OS I/Oの直接証拠が必要な範囲も別に保持します。`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。

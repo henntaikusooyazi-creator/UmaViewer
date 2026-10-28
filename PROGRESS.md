@@ -4,6 +4,20 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## loaderの実ファイル位置からsource queueとpacketへの限定対応
+
+最終runでは、本編Songの資源seed1件・自然読込み要求2件・完了packetのsource queue投入2件・同じpacketのinput pool書込み2件、合計7/7件をstrict readerで採用しました。共有読取り上限未到達で採取windowを閉じています。実引数、packet pointer・版、前後資源snapshot、callerと実行順を保存しました。
+
+seedから要求までにresampler stepが変化したため、従来の全状態一致によるlineageは0件のまま保持しました。別の符号化byte輸送専用readerでは、このstep遷移を明示したうえで、同じSong・資源識別・source owner・queue・file wrapper・loaderと実poolを照合し、要求→完了queue投入→input pool書込みを2packetで接続しました。要求以降の資源状態は従来の一致条件も満たしています。sample単位や連続時計の契約には使用しません。
+
+実行中loaderが保持していたpathの現ファイルを、通常終了後に既存の選択AWBの宣言内容hashへ照合しました。変更していないCore AWB readerのWave範囲も一致し、観測した要求offset・sizeとloader baseから得た2範囲を、hash一致した資産metadataのHCA符号化block範囲へ対応付けました。低層offsetの導出には同一buildの限定静的callee確認を使っています。OSの実読込みhandle・戻り値、packet本文のbyte一致、同じpacketのdecoder消費、絶対sample原点、Viewer PCM epochは未成立です。
+
+先行run66・67は共有parameter読取り上限到達により保存各3件を拒否、run68は前面化と接続回復中のARM待機期限切れで未ARMです。旧結果は変更せず、補助観測の早期停止と、命令が書く32bit mode引数の幅を正しく扱う修正を追加しました。上位paddingを含む閉鎖native33件、事前Python518件、資源107件がPASS。追加輸送readerを含むPython528件もPASSし、その22 statements・14 branchesは未通過0です。旧queue readerと資産範囲計算の検証は別に保持しています。
+
+4 runの保存証拠を移し、元temp・ゲーム原本へのreadを拒否した再評価で、拒否・未ARM・最終7件採用・限定輸送2件・資産範囲2件を再現しました。外側Pendingは維持。最終runの28 hook解除・remaining 0・drain・code pin照合、通常WM_CLOSE後の不在と所有配備復元、Core13件・原作4ファイル・proof259件のhash不変は独立確認しています。公開は文書2件のみ。通常runtime、成功ブランチ、DLL未stage削除を保持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。
+
+次の有限edgeは、今回のファイル位置付きpacketをpool取得とdecoder block消費へ結ぶことです。過去runのdecoder記録を今回の同時traceへ流用せず、`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown` と歴史的Pendingを維持します。
+
 ## 本編の符号化入力packetからpoolとdecoderへの限定接続
 
 本編の現在Song資源を実getterのreceiverから資格化し、符号化入力の書込み2件・取得2件・block入力4件、合計8/8件をstrict readerで採用しました。入力packet metadataは2/2件で実書込みnodeに一致し、そのうち同じ1 bufferについて、書込み→pool取得→decoderの最初のblock入力を1組接続できました。先行する未追跡の取得1件、および残るblockを独立した生成lineageへ数えません。
