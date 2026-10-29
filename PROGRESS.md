@@ -4,6 +4,14 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 最初の実parameter frameを狙う事前検証
+
+先頭getterと同じframeに限定する旧結果を保持し、その後の最初の実parameter frameを選ぶ別profileを準備しました。frame選択をmetadata・期限・既存上限確認の後へ移し、エラー付き／未完了getterが混在する場合や複数候補をUnknownにします。最初のparameterが不成立でも後続へ選び直さず、最近傍・固定sample補正は使いません。
+
+実native関数のCPU試験は新profile21・従来6チェックPASS。collectorは524,288 bytes、source graph128の上限内でbuildし、入力lease検査も通過しました。[公開監査器](Tools/OriginalLiveRendering/Validation/FirstRenderFrame/README.md)は53件PASS、私有時計・copied-generation readerを含むPythonは120件PASSです。公開分を含む件数で、新規原作観測ではありません。過去の上限到達窓とparameter 0件窓を成功へ変更せず再評価しました。
+
+現在のゲームは開いたままです。旧resident listenerは待機期限で終了済みで、新profileの接続・ARM・原作採取は0。通常終了後に8時間待機版を反映する待機処理を維持しています。自然先頭のgetter→owner→parameter→CommandBuffer generation→GPU draw、Viewer自然epoch join、全面RGBA比較は今回まだ成立していません。公開runtime・shader・物理・IKは変更せず、既存成功、false／Unknownと歴史的Pendingを維持します。
+
 ## 採取のたびにゲームを再起動しない運用
 
 所有observerを上限付きの常駐制御へ改修し、同じ原作PID・生成時刻のまま3ジョブを実行しました。ジョブ間のゲーム再起動は0。各ジョブでnative worker終了、handle／registry閉鎖、hook停止・drain・code復元・所有resource retireを確認してから次へ進めています。外側Pendingの採取も、停止証拠と混同せず元判定を保持します。最後のジョブは`StopCompleted`／保持handle復旧が成立しました。
@@ -140,7 +148,7 @@ run70では本編Songのseed・自然read要求・source queue投入・input poo
 
 loader保持pathの現ファイル内容hashと、変更していないCore readerのWave範囲を再照合しました。観測要求と同じpacketのprimary消費を、資産上の単一HCA符号化block範囲へ対応付けています。低層位置は観測offsetと保持base、同一build命令による導出です。OSの実file handle・read戻り本文・packet本文byte一致、絶対sample原点、Viewer PCM epochの証明にはしません。再生最初のbufferでもありません。
 
-追加nativeの置換ABI・admission・閉鎖39件、事前Python575件、資源107件、採取後primary-span試験50件がPASS。対象4 readerのstatements・branchは未通過0、Ruff PASSです。hook総数・source graph・DLL・保存・共有読取り上限は維持し、1packetで採取windowを閉鎖しました。元のreaderの拒否結果も保存先移動後の再評価で再現しています。再評価の旧temp依存importは拒否されたまま記録し、凍結済み依存を明示ロードする修正版harnessで、元temp・原作・Core原本・媒体readを禁止して同じ結論を再現しました。
+追加nativeの置換ABI・admission・閉鎖39件、事前Python575件、資源107件、採取後primary-span試験53件がPASS。対象4 readerのstatements・branchは未通過0、Ruff PASSです。hook総数・source graph・DLL・保存・共有読取り上限は維持し、1packetで採取windowを閉鎖しました。元のreaderの拒否結果も保存先移動後の再評価で再現しています。再評価の旧temp依存importは拒否されたまま記録し、凍結済み依存を明示ロードする修正版harnessで、元temp・原作・Core原本・媒体readを禁止して同じ結論を再現しました。
 
 外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` を維持。28 hook解除・remaining 0・drain・runtime/GPU code pins、通常WM_CLOSE後のprocess不在と所有配備復元は別に成立しています。Core13・原作4・事前proof272 source／検証入力のhash不変を確認しました。公開は文書2件のみ。通常runtime、成功ブランチ、DLL未stage削除は維持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。
 

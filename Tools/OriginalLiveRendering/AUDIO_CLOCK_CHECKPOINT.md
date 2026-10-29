@@ -1,5 +1,13 @@
 # 明示checkpointからの音声時計
 
+## 最初の実parameter frameの選択を分離
+
+次の私有profileは、実先頭getter完了後に最初に現れたparameter frameを選びます。候補の確定をmetadata・期限・上限確認より後へ移し、同frameのgetterが一意・完了・正常で、thread／owner／値が一致する場合だけ結合します。次ordinalまでの保存範囲、エラー・未完了行の混在、lifetime変更も確認し、欠落を近いframeや固定sample差で補完しません。
+
+[公開監査器と試験範囲](Validation/FirstRenderFrame/README.md)を追加しました。実native関数のCPU試験21＋従来6チェック、公開Python53件、私有の時計・generation readerを含む120件がPASSです。新collectorのbuildと入力上限確認までで、現在のゲームへの新規ARM・採取は0です。旧resident listener終了後のため、ゲームを閉じず通常終了後の更新待機を維持しています。
+
+先頭時計の過去のbit一致を、新profileによる自然epoch joinへ昇格しません。原作の同一frameでCommandBuffer generationと実GPU drawまで閉じ、その後でViewerの自然source世代・consume・submissionと対応付ける必要があります。全面RGBA比較、各false／Unknown、歴史的Pendingは未変更です。
+
 ## 同一ゲームプロセスでの採取切替と先頭frameの境界
 
 原作の描画観測をPlay前に準備し、所有observerを同一PID・生成時刻内で再利用する制御へ分離しました。3ジョブの間のゲーム再起動は0で、native workerとhook／resourceの終了証拠を毎回要求しています。先行Pendingの受入条件を緩めたものではありません。
@@ -50,7 +58,7 @@ run92では先頭8 getterを同一owner/source/threadで連続取得し、保持
 
 ## 任意のPCM／DSP処理段階観測
 
-`StreamingAudioCapture.ReadCompleted`は、既存readの完了記録とreadonly PCM viewを同期的に渡します。viewはcallback中だけ有効です。観測はreadと同じthread上で実行されます。音声callbackから呼ぶ場合は有限のcopy等に限定し、待機やfile I/Oを行わない呼出し側設計が必要です。観測例外は元のread例外と分離し、実行中のobserverをdrain済みにしません。公開試験は50件PASSです。
+`StreamingAudioCapture.ReadCompleted`は、既存readの完了記録とreadonly PCM viewを同期的に渡します。viewはcallback中だけ有効です。観測はreadと同じthread上で実行されます。音声callbackから呼ぶ場合は有限のcopy等に限定し、待機やfile I/Oを行わない呼出し側設計が必要です。観測例外は元のread例外と分離し、実行中のobserverをdrain済みにしません。公開試験は53件PASSです。
 
 viewは要求bufferの全体を指すため、有効なdecoder出力の範囲は`Callback.returned`と明示したchannel数・単位で確認します。EOFや部分readの残りを実PCMとして採用しません。
 
