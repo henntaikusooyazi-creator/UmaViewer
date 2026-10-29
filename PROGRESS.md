@@ -4,6 +4,18 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## PCM全ブロックと実filter入口の対応
+
+原作の追加runなしで、Viewerの2選択区間を全ブロック単位で採取しました。非無音371ブロックのfloat byteがprovider出力へ一意に一致し、範囲外の4件は拒否しました。原作で座標を確認済みの128 sampleは、同じ資産のViewer filter 1ブロックに全体が含まれました。ただし、その128 sample内の現在sampleを直接観測したowner更新は0件です。区間の対応を同一frame対応へ昇格していません。
+
+現在sample→owner→submissionと対応した188件のうち、コピー完了後の読取りは44件、同じDSP点を示した読取りは144件でした。両者は別集合です。filter入口を直接記録した独立の短い採取でも、同じDSP点の56件はすべてfilter入口前、コピー完了後の37件は別集合でした。後者のDSP差は1種類ではなく、固定buffer遅延や秒offsetを採用する根拠にはしません。2採取の件数を独立原作観測へ合算しません。
+
+全曲試験は142秒終端・Viewer復帰、3,325描画＝音声3,241＋明示tail84、fault・例外0です。一方、左右各1 keyの有効区間を連続owner観測が跨ぎ、10/12のため全体Failedを維持しました。飛び越した観測間のsource進行は約0.405秒でしたが、停止原因は未確定です。後続の短い採取は約18秒で明示停止しており、全曲成功へ数えません。
+
+公開した保存証拠用Python比較器は60/60 PASS、2 moduleの124 statements・68 branchesは未通過0です。非無音の一意な全byte一致、同一source/clip、整数sample座標、半開区間、filter入口・DSP読取・コピー・main読取を別々に検証します。原作媒体・採取値・private observerは公開しません。通常runtimeと既存時計は変更せず、Unityの既存544件や原作RGB replayは今回再実行していません。
+
+原作run89の自然時計tuple一致は今回も0件です。次の境界は、原作同期cacheの補間・getter消費位置と、今回区別したViewer読取り段階の直接対応です。最近傍や固定補正で一致を作らず、同一frame全面RGBは未受入、`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`と歴史的Pendingを維持します。[比較器と入力条件](Tools/OriginalLiveRendering/AUDIO_PCM_OBSERVATION.md#全ブロックと読取り段階の保存監査)を参照してください。
+
 ## PCM内容と音声処理段階の限定観測
 
 原作run89では、実getter戻り値→平滑化8成分→owner→render parameter内のCommandBufferコピー→実行世代→一意queue範囲→実GPU drawを、同一frameの1件として接続しました。コピー元とコピー先の記録内容、context内の対応entry、実行cursorと消費payloadを照合しています。消費payloadはparameter開始時の有効stream範囲より後にありました。旧来の「drawがparameter呼出し内に直接nestする」というreaderは拒否のまま保持し、遅延実行の別の証拠として扱います。全writerや全lifetimeの閉包ではありません。

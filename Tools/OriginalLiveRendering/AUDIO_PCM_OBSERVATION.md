@@ -2,6 +2,31 @@
 
 `StreamingAudioCapture`は、既存のstream callbackを明示登録したときだけ記録します。元音源を再解析せず、従来のsample providerとstream Positionを利用します。通常UIへの自動登録はありません。
 
+## 全ブロックと読取り段階の保存監査
+
+`Validation/PcmPhase/pcm_content_match.py`は、明示したchannel数・coverageを持つPCM float bytesから、非無音の完全一致位置を探します。探索範囲内で一致候補が複数なら拒否し、未採取範囲やsample境界外の一致を採用しません。一意性は入力した選択範囲内のものです。媒体の解析・追加decode・原作プロセスへの接続は行いません。
+
+`pcm_phase_audit.py`は保存済みの全filterブロックと、同じcapture lifetimeのsource/clip・現在sample・DSP読取・owner/submission記録を監査する補助関数です。sampleはchannelあたり、PCMはinterleaved float32 little endianです。providerは4 MiB以下、filter保存全体も4 MiB以下、各ブロックは128〜2,048 sample、最大256ブロック、選択区間は最大4秒です。省略した末尾、無音、曖昧な一致、違うsource/clip、単位違い、時刻逆順を拒否します。
+
+- `match_blocks(window, provider, coverage, filtered)`は、実採取された全ブロックのbyte一致とDSP sample座標を返します。`firstFloat`はfloat要素番号、`capturedFrames`と`bufferFrames`は等しいことを要求します。
+- `read_phase(block, owner, rate)`は同じ論理sample範囲に属する現在sampleについて、filterコピーとmain読取りの先後を返します。入口timestampが明示されている場合だけcallback入口の先後も返します。コピー開始を入口へ読み替えません。source/clipの数値IDは同一capture内だけで有効で、呼出し側が資産identity・lifetime・owner→submissionの資格を別に維持します。
+- `contain_interval(matches, begin, end)`は半開区間の全体包含を判定します。包含成功でも`point_owner_join=false`、`original_same_frame_RGB_admitted=false`です。別runの同一sample区間を同時刻や同一frameと認定しません。
+
+DSP秒から整数sampleへの変換は、実値が整数sampleのfloat表現誤差内にある場合に限ります。観測された差を時計補正へ適用せず、範囲外の点や欠落したownerを補間しません。fixtureは人工PCMのみで、原作の採取値・音声本文・shaderを含みません。
+
+検証例（既存のuv管理環境を使用し、coverage出力先はrepo外へ指定）：
+
+```powershell
+<python> -m ruff check Tools/OriginalLiveRendering/Validation/PcmPhase
+<python> -m pytest -q -p no:cacheprovider --cov=pcm_phase_audit --cov=pcm_content_match --cov-branch <selected tests>
+```
+
+pytestは当該folderを作業先とし、`COVERAGE_FILE`をrepo外へ設定します。今回60/60 PASS、対象2 moduleの124 statements・68 branchesは未通過0です。private orchestration全体のcoverageや、原作の観測数ではありません。
+
+実採取では全曲側371/375ブロックが一致し、範囲外4件を拒否しました。現在sample→owner→submissionの188件中、同じDSP点の144件とコピー完了後の44件は別集合です。実入口を加えた約18秒の短い別採取でも、同じDSP点56件は入口前、コピー完了後37件は別集合でした。後者のDSP差は1種類ではありません。コピー完了・同じDSP点・同じ原作clockを同一条件として扱ったり、固定buffer補正を導入したりしません。
+
+原作既知128 sampleはViewerの全ブロック内に収まりましたが、その短区間内の現在sample観測は0件です。全曲側の3,325描画は142秒終端・復帰、音声3,241＋明示tail84、fault/例外0でしたが、ownerが左右各1 keyの有効区間を跨ぎ10/12のためFailedです。短い採取は計画した停止として記録し、全曲成功へ数えません。原作run89時計tupleとの自然一致、同一frame全面RGB、speaker位置の証明は未成立のままです。
+
 ## 自然音声から最終submissionまでの観測
 
 `-AudioPcm`時の`pcm-clock.private.json`は`schema=ViewerAudioOwnerSubmission-v2`です。各音声観測について、現在のprovider frameと`FinalCompositeDrawn`通知のselected objectが同一で、出力RTが現在のtargetであることを要求します。全channelの現在owner bitが音声clockのownerと一致し、比較owner bitと整数frame対がchannel間でも一致する場合だけ保存します。欠落・stale drawは`pcmFailures`となり、前回のdrawを補完しません。
