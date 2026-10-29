@@ -148,7 +148,7 @@ run70では本編Songのseed・自然read要求・source queue投入・input poo
 
 loader保持pathの現ファイル内容hashと、変更していないCore readerのWave範囲を再照合しました。観測要求と同じpacketのprimary消費を、資産上の単一HCA符号化block範囲へ対応付けています。低層位置は観測offsetと保持base、同一build命令による導出です。OSの実file handle・read戻り本文・packet本文byte一致、絶対sample原点、Viewer PCM epochの証明にはしません。再生最初のbufferでもありません。
 
-追加nativeの置換ABI・admission・閉鎖39件、事前Python575件、資源107件、採取後primary-span試験53件がPASS。対象4 readerのstatements・branchは未通過0、Ruff PASSです。hook総数・source graph・DLL・保存・共有読取り上限は維持し、1packetで採取windowを閉鎖しました。元のreaderの拒否結果も保存先移動後の再評価で再現しています。再評価の旧temp依存importは拒否されたまま記録し、凍結済み依存を明示ロードする修正版harnessで、元temp・原作・Core原本・媒体readを禁止して同じ結論を再現しました。
+追加nativeの置換ABI・admission・閉鎖39件、事前Python575件、資源107件、採取後primary-span試験50件がPASS。対象4 readerのstatements・branchは未通過0、Ruff PASSです。hook総数・source graph・DLL・保存・共有読取り上限は維持し、1packetで採取windowを閉鎖しました。元のreaderの拒否結果も保存先移動後の再評価で再現しています。再評価の旧temp依存importは拒否されたまま記録し、凍結済み依存を明示ロードする修正版harnessで、元temp・原作・Core原本・媒体readを禁止して同じ結論を再現しました。
 
 外側は `PendingManualRecovery / observation_flags`、body `complete/pins_ok=false` を維持。28 hook解除・remaining 0・drain・runtime/GPU code pins、通常WM_CLOSE後のprocess不在と所有配備復元は別に成立しています。Core13・原作4・事前proof272 source／検証入力のhash不変を確認しました。公開は文書2件のみ。通常runtime、成功ブランチ、DLL未stage削除は維持し、既存498件・142秒Viewer再生・RGB比較は未再実行です。
 

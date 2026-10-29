@@ -58,7 +58,7 @@ run92では先頭8 getterを同一owner/source/threadで連続取得し、保持
 
 ## 任意のPCM／DSP処理段階観測
 
-`StreamingAudioCapture.ReadCompleted`は、既存readの完了記録とreadonly PCM viewを同期的に渡します。viewはcallback中だけ有効です。観測はreadと同じthread上で実行されます。音声callbackから呼ぶ場合は有限のcopy等に限定し、待機やfile I/Oを行わない呼出し側設計が必要です。観測例外は元のread例外と分離し、実行中のobserverをdrain済みにしません。公開試験は53件PASSです。
+`StreamingAudioCapture.ReadCompleted`は、既存readの完了記録とreadonly PCM viewを同期的に渡します。viewはcallback中だけ有効です。観測はreadと同じthread上で実行されます。音声callbackから呼ぶ場合は有限のcopy等に限定し、待機やfile I/Oを行わない呼出し側設計が必要です。観測例外は元のread例外と分離し、実行中のobserverをdrain済みにしません。公開試験は50件PASSです。
 
 viewは要求bufferの全体を指すため、有効なdecoder出力の範囲は`Callback.returned`と明示したchannel数・単位で確認します。EOFや部分readの残りを実PCMとして採用しません。
 
