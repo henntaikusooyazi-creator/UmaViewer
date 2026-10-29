@@ -253,6 +253,34 @@ public static class OriginalLiveContinuousValidation
                             if (Directory.Exists(temporary)) Directory.Delete(temporary);
                         }
                     }
+                    using (var deferred = new OriginalLiveChannelEvidence(opt, 0, 1, f => background, true))
+                    {
+                        rejected = false;
+                        try { deferred.CompleteDeferredVerification(); } catch (InvalidOperationException) { rejected = true; }
+                        Check(rejected && !deferred.Evidence.complete && deferred.Evidence.failure == null,
+                            "Deferred verification cannot run before the stage copies exist.");
+                        control.AlterUpdate(1.5f); control.AlterLateUpdate();
+                        var e = deferred.Evidence; long selectedSerial = e.selectedSerial;
+                        Check(e.captured && !e.complete && e.failure == null && e.verificationBeginTicks == 0 && e.captures.Count == 6,
+                            "Deferred mode captures the real stages without doing GPU replay/readback inside the live submission.");
+                        string unwritten = Path.Combine(Path.GetTempPath(), "UmaViewerUnverified-" + Guid.NewGuid().ToString("N")); rejected = false;
+                        try { deferred.Save(unwritten); } catch (InvalidOperationException) { rejected = true; }
+                        Check(rejected && !Directory.Exists(unwritten), "Unverified copied images cannot emit a success receipt.");
+                        control.AlterUpdate(0); control.AlterLateUpdate();
+                        Check(e.selectedSerial == selectedSerial && e.captured && !e.complete && opt.LastTransparentChannels == 3,
+                            "The copied frame stays independent while later updates reuse and clear the original RTs.");
+                        deferred.CompleteDeferredVerification();
+                        Check(e.complete && e.exactReplay && e.exactRightAccumulationReplay && e.exactLeftAccumulationReplay,
+                            "Explicit completion after source reuse reproduces the saved right, left, and final RGBA images.");
+                        Check(e.verificationBeginTicks >= e.captureCompletedTicks && e.verificationEndTicks >= e.verificationBeginTicks,
+                            "Copy completion and later verification have separate measured boundaries.");
+                        long verified = e.verificationEndTicks; deferred.CompleteDeferredVerification();
+                        Check(e.verificationEndTicks == verified && e.selectedSerial == selectedSerial,
+                            "Repeated completion does not rerun or change the verified observation.");
+                        deferred.Dispose(); rejected = false;
+                        try { deferred.CompleteDeferredVerification(); } catch (ObjectDisposedException) { rejected = true; }
+                        Check(rejected, "Released snapshots cannot be verified later.");
+                    }
                 }
             }
             var lifetime = new OriginalLiveContinuousProvider(control, profile, binding);
@@ -298,6 +326,67 @@ public static class OriginalLiveContinuousValidation
                 Check(ReferenceEquals(director.OriginalLiveTimeProvider, foreign), "Audio disposal preserves a replacement provider.");
                 director.OriginalLiveTimeProvider = null;
 
+                var startup = typeof(Director).GetMethod("TryConsumeStartupTime", BindingFlags.Instance | BindingFlags.NonPublic);
+                var startupOwner = typeof(Director).GetField("OriginalLiveStartupTimeProvider", BindingFlags.Instance | BindingFlags.NonPublic);
+                var sync = typeof(Director).GetField("_syncTime", BindingFlags.Instance | BindingFlags.Public);
+                int StartClock() => (int)startup.Invoke(director, null);
+                var savedSlider = director.sliderControl;
+                var slider = Go("Synthetic startup slider").AddComponent<SliderControl>(); director.sliderControl = slider;
+                int startupReads = 0;
+                Func<float?> initial = () => { startupReads++; return .005f; };
+                director.OriginalLiveTimeProvider = initial; sync.SetValue(director, false);
+                Check(StartClock() == 0 && startupReads == 0, "Old registrations keep the legacy startup path without another read.");
+                startupOwner.SetValue(director, initial); director.IsRecordVMD = true;
+                Check(StartClock() == 0 && startupReads == 0, "Recording retains its existing startup path."); director.IsRecordVMD = false;
+                slider.is_Touched = true;
+                Check(StartClock() == 0 && startupReads == 0, "Paused startup does not consume an audio sample."); slider.is_Touched = false;
+                slider.is_Outed = true;
+                Check(StartClock() == 0 && startupReads == 0, "Seek startup retains the existing seek path."); slider.is_Outed = false;
+                foreach (float early in new[] { 0f, .005f, .01f })
+                {
+                    int calls = 0; Func<float?> sample = () => { calls++; return early; };
+                    director.OriginalLiveTimeProvider = sample; startupOwner.SetValue(director, sample); sync.SetValue(director, false);
+                    Check(StartClock() == 2 && calls == 1 && director._liveCurrentTime == early && (bool)sync.GetValue(director),
+                        "Explicit startup accepts real zero or early time without the legacy threshold or a second read.");
+                    Check(StartClock() == 0 && calls == 1, "An accepted startup is not consumed again.");
+                }
+                foreach (float invalid in new[] { -1f, float.NaN, float.PositiveInfinity })
+                {
+                    Func<float?> sample = () => invalid;
+                    director.OriginalLiveTimeProvider = sample; startupOwner.SetValue(director, sample); sync.SetValue(director, false);
+                    float unchanged = director._liveCurrentTime; rejected = false;
+                    try { StartClock(); } catch (TargetInvocationException e) when (e.InnerException is InvalidOperationException) { rejected = true; }
+                    Check(rejected && !(bool)sync.GetValue(director) && director._liveCurrentTime == unchanged,
+                        "An invalid startup leaves owner and synchronization unchanged.");
+                }
+                Func<float?> changing = () => { director.OriginalLiveTimeProvider = initial; return 3f; };
+                director.OriginalLiveTimeProvider = changing; startupOwner.SetValue(director, changing); sync.SetValue(director, false);
+                float beforeReplacement = director._liveCurrentTime;
+                Check(StartClock() == 1 && !(bool)sync.GetValue(director) && director._liveCurrentTime == beforeReplacement &&
+                    ReferenceEquals(director.OriginalLiveTimeProvider, initial), "A replacement during evaluation holds startup without overwriting its owner.");
+                director.OriginalLiveTimeProvider = null; startupOwner.SetValue(director, null); sync.SetValue(director, false);
+                using (var startupClock = new OriginalLiveAudioClock(director, clockProvider, () => null))
+                {
+                    Check(startupOwner.GetValue(director) == null, "Audio construction alone does not opt into startup consumption.");
+                    startupClock.EnableStartupConsumption(); startupClock.EnableStartupConsumption();
+                    Check(ReferenceEquals(startupOwner.GetValue(director), director.OriginalLiveTimeProvider), "Startup ownership is explicit and idempotent.");
+                    float held = director._liveCurrentTime;
+                    Check(StartClock() == 1 && !(bool)sync.GetValue(director) && director._liveCurrentTime == held && startupClock.HeldReads == 1,
+                        "Missing startup audio holds the original state and leaves startup pending.");
+                }
+                Check(startupOwner.GetValue(director) == null && director.OriginalLiveTimeProvider == null, "Disposal releases the owned startup token.");
+                var detachedStartup = new OriginalLiveAudioClock(director, clockProvider, () => null);
+                detachedStartup.EnableStartupConsumption(); startupOwner.SetValue(director, initial); rejected = false;
+                try { detachedStartup.EnableStartupConsumption(); } catch (InvalidOperationException) { rejected = true; }
+                Check(rejected && ReferenceEquals(startupOwner.GetValue(director), initial), "Another startup owner is never overwritten.");
+                director.OriginalLiveTimeProvider = initial; detachedStartup.Dispose();
+                Check(ReferenceEquals(director.OriginalLiveTimeProvider, initial) && ReferenceEquals(startupOwner.GetValue(director), initial),
+                    "Disposal preserves replacement playback and startup ownership.");
+                rejected = false; try { detachedStartup.EnableStartupConsumption(); } catch (ObjectDisposedException) { rejected = true; }
+                Check(rejected, "Disposed clocks cannot re-enable startup.");
+                director.OriginalLiveTimeProvider = null; startupOwner.SetValue(director, null); director.sliderControl = savedSlider;
+                sync.SetValue(director, false); director._liveCurrentTime = 2;
+
                 var readDsp = typeof(OriginalLiveAudioClock).GetMethod("TryReadDsp", BindingFlags.Static | BindingFlags.NonPublic);
                 foreach (Func<double> reader in new Func<double>[] { null, () => -1, () => double.NaN,
                     () => double.PositiveInfinity, () => double.NegativeInfinity, () => throw new InvalidOperationException("Artificial DSP failure") })
@@ -340,6 +429,81 @@ public static class OriginalLiveContinuousValidation
                 var resolve = typeof(OriginalLiveAudioClock).GetMethod("Resolve", BindingFlags.Instance | BindingFlags.NonPublic);
                 object Snapshot(float time) => Activator.CreateInstance(pendingType, BindingFlags.Instance | BindingFlags.NonPublic,
                     null, new object[] { audio, audio.clip, time, 17 }, null);
+                var readySource = typeof(Director).GetField("OriginalLiveAudioReady", BindingFlags.Instance | BindingFlags.NonPublic);
+                var afterOwner = typeof(Director).GetField("OriginalLiveAfterOwnerUpdate", BindingFlags.Instance | BindingFlags.NonPublic);
+                var stagedRead = typeof(OriginalLiveAudioClock).GetMethod("ReadStagedSource", BindingFlags.Instance | BindingFlags.NonPublic);
+                var stagedClock = new OriginalLiveAudioClock(director, clockProvider, () => audio);
+                OriginalLiveAudioClock.Sample? produced = null;
+                stagedClock.SourceCaptured += sample => produced = sample;
+                stagedClock.EnableStagedSourceConsumption(); stagedClock.EnableStagedSourceConsumption();
+                Check(readySource.GetValue(director) != null && afterOwner.GetValue(director) != null,
+                    "Staged sampling explicitly owns the before-Play and after-owner callbacks.");
+                ((Action)readySource.GetValue(director))();
+                Check(stagedClock.StagedSourceCaptures == 1 && stagedClock.StagedSourceConsumes == 0 && stagedClock.ReadCount == 0,
+                    "The actual stopped AudioSource is observed before Play without advancing any owner state.");
+                Check(produced.HasValue && produced.Value.SourceReadSerial == 1 && produced.Value.SourceReadStage == 1 &&
+                    produced.Value.SourceTime == audio.time && produced.Value.AudioSamples == audio.timeSamples && produced.Value.ConsumeBeginTicks == 0,
+                    "An independent producer observation precedes consumption and contains the actual API values.");
+                // Invoke the consumer directly: this fixture never starts audio.
+                float primed = (float)stagedRead.Invoke(stagedClock, new object[] { audio, audio.clip });
+                control.AlterUpdate(primed); control.AlterLateUpdate();
+                var primedObservation = stagedClock.LastObservation.Value;
+                Check(primed == audio.time && primedObservation.AudioSamples == audio.timeSamples && primedObservation.SourceReadStage == 1 &&
+                    primedObservation.SourceReadSerial == 1 && primedObservation.SourceReadUnityFrame == Time.frameCount && stagedClock.JoinedFrames == 1,
+                    "The captured actual value and producer serial join a real Control update without a fabricated initial sample.");
+                Check(primedObservation.ReadEndTicks <= primedObservation.ConsumeBeginTicks &&
+                    primedObservation.ConsumeBeginTicks <= primedObservation.ConsumeEndTicks,
+                    "The producer read and later clock consumption retain separate actual timestamp brackets.");
+                ((Action)afterOwner.GetValue(director))();
+                Check(stagedRead.Invoke(stagedClock, new object[] { audio, audio.clip }) == null && stagedClock.StagedSourceConsumes == 1,
+                    "A stopped source cannot refresh or reuse a consumed cache entry.");
+                stagedClock.Dispose();
+                Check(readySource.GetValue(director) == null && afterOwner.GetValue(director) == null && startupOwner.GetValue(director) == null,
+                    "Staged disposal releases only the callbacks and startup token it owns.");
+                rejected = false; try { stagedClock.EnableStagedSourceConsumption(); } catch (ObjectDisposedException) { rejected = true; }
+                Check(rejected, "Disposed registrations cannot recreate a staged lifetime.");
+                using (var diagnostics = new OriginalLiveAudioClock(director, clockProvider, () => audio))
+                {
+                    diagnostics.EnableStagedSourceConsumption(); diagnostics.SourceCaptured += sample => throw new InvalidOperationException("Artificial observer failure");
+                    var ready = (Action)readySource.GetValue(director); ready();
+                    Check(diagnostics.SourceCaptureObserverFailures == 1 && diagnostics.StagedSourceCaptures == 1 &&
+                        stagedRead.Invoke(diagnostics, new object[] { audio, audio.clip }) != null,
+                        "Diagnostic observer failure is recorded separately and does not replace the actual source value.");
+                    diagnostics.Dispose(); ready();
+                    Check(diagnostics.StagedSourceCaptures == 1, "A retained callback cannot capture new data after disposal.");
+                }
+                Action foreignSource = () => { };
+                using (var foreignClock = new OriginalLiveAudioClock(director, clockProvider, () => audio))
+                {
+                    readySource.SetValue(director, foreignSource); rejected = false;
+                    try { foreignClock.EnableStagedSourceConsumption(); } catch (InvalidOperationException) { rejected = true; }
+                    Check(rejected && ReferenceEquals(readySource.GetValue(director), foreignSource) && startupOwner.GetValue(director) == null,
+                        "A foreign source callback is rejected without partially enabling startup.");
+                }
+                Check(ReferenceEquals(readySource.GetValue(director), foreignSource), "Disposal preserves a foreign source callback.");
+                readySource.SetValue(director, null);
+                using (var changedClip = new OriginalLiveAudioClock(director, clockProvider, () => audio))
+                {
+                    changedClip.EnableStagedSourceConsumption(); ((Action)readySource.GetValue(director))();
+                    var otherClip = Own(AudioClip.Create("Unqualified replacement", 1024, 1, 8000, false));
+                    Check(stagedRead.Invoke(changedClip, new object[] { audio, otherClip }) == null && changedClip.StagedSourceInvalidations == 1,
+                        "A cached sample cannot cross a different clip lifetime.");
+                    rejected = false; try { changedClip.EnableStagedSourceConsumption(); } catch (InvalidOperationException) { rejected = true; }
+                    Check(rejected, "An invalidated staged lifetime requires a new registration.");
+                }
+                using (var duplicate = new OriginalLiveAudioClock(director, clockProvider, () => audio))
+                {
+                    duplicate.EnableStagedSourceConsumption(); var ready = (Action)readySource.GetValue(director); ready(); ready();
+                    Check(duplicate.StagedSourceCaptures == 1 && duplicate.StagedSourceInvalidations == 1 &&
+                        stagedRead.Invoke(duplicate, new object[] { audio, audio.clip }) == null,
+                        "An unconsumed generation cannot be overwritten by a second producer callback.");
+                }
+                using (var unconsumed = new OriginalLiveAudioClock(director, clockProvider, () => audio))
+                {
+                    unconsumed.EnableStagedSourceConsumption(); ((Action)afterOwner.GetValue(director))();
+                    Check(unconsumed.StagedSourceInvalidations == 1 && unconsumed.StagedSourceConsumes == 0,
+                        "A pause or seek path without an accepted clock read invalidates the staged lifetime.");
+                }
                 using (var evaluatedClock = new OriginalLiveAudioClock(director, clockProvider, () => audio, sample =>
                 {
                     Check(sample.Source == audio && sample.Clip == audio.clip && sample.AudioSamples == 17 &&
@@ -357,6 +521,8 @@ public static class OriginalLiveContinuousValidation
                     var observed = evaluatedClock.LastObservation.Value;
                     Check(!observed.HasDspTime && observed.ReadBeginDspTime == 0 && observed.ReadEndDspTime == 0,
                         "Legacy samples retain absent DSP metadata without fabricating a measured epoch.");
+                    Check(observed.SourceReadStage == 0 && observed.SourceReadSerial == 0 && observed.SourceReadUnityFrame == observed.SampledUnityFrame,
+                        "Existing immediate samples keep their original read stage and frame semantics.");
                     Check(evaluatedClock.JoinedFrames == 1 && observed.SourceTime == 1.06f && observed.OwnerTime == owner &&
                         observed.SourceTime != observed.OwnerTime, "Actual Control joins evaluated owner while preserving raw source time.");
                     Check(observed.ClipName == "Artificial clock clip" && observed.ClipSampleCount == 1024 &&

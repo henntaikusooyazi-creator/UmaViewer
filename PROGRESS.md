@@ -4,6 +4,24 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 音声の生成・消費段階を分離した自然更新
+
+明示オプションに限り、音声初期化後・Play前の実AudioSource値を保存し、続くowner更新で一度だけ消費する経路を追加しました。以後は前のowner更新後に実際に読んだ値を、source/clip・生成serial・読取りframe・消費frameを分けて渡します。秒数・sample・固定frameの補正ではありません。先頭のDirector同期も同じ登録で実Controlへ供給でき、旧constructorと未登録時の時計は保持しています。
+
+検証用の6枚のRTコピーは描画直後に維持し、独立GPU replay・ReadPixels・channel PNG保存を自然終端・Viewer復帰後へ移せるようにしました。コピー保存だけでは成功にせず、後段の検証完了を別に要求します。従来の即時検証も残しています。開始・中間・終了preview画像は引き続き同期保存で、すべての診断処理の停止を除去したとは主張しません。
+
+最終ソースの自然試験は142秒・3,341描画＝音声3,258＋明示tail83、12/12 key、初回late-only 0、fault・例外0で成功しました。実source生成3,258件とowner／最終submission3,258件をserialで対応付け、生成後の値を再読込みで置換していません。全曲で原作式の自然RGB一致を確認した試験ではなく、後処理は人工7段診断です。tailも原作の終端処理の証明にはしません。
+
+保存済み原作の先頭getter入力と明示初期stateから計算した8成分が、Viewerで自然採用された最初の時計state・ownerとbit一致しました。次getterまで保持される原作6成分も直接保存値と一致します。ただし、この原作先頭観測には同一GPU drawの帰属がなく、先頭1遷移の算術対応に限定します。原作run89の後半tupleと自然更新の完全一致は0件のままです。
+
+追加の原作run92でも先頭8 getterを連続取得し、7遷移の保持成分42/42と、Viewer先頭の計算8成分が一致しました。後続の非連続1 getterをこの7遷移へ連結しません。描画観測の有効化中に狙った先頭範囲を過ぎたためGPU世代joinは0、外側は`PendingManualRecovery / internal_wait_unreached`です。実際に有効だった21 hookの解除・remaining 0・drain・code pin照合と通常終了後の所有配備復元を確認しましたが、metadata不変条件とcomplete/pins_okは失敗のまま保持します。28枠・read上限・collectorサイズ上限は変更していません。
+
+Control/GPUは最終ソースで明示原作時計入力を含むTestOnly検証636/636 PASSです。GPU比較のgeometry/camera/maskは人工入力で、原作frame RGBの比較には数えません。公開PCM監査は79/79 PASS、3 moduleの149 statements・74 branchesは未通過0です。float32 source時刻の厳密な整数sample逆像を計算する補助関数を追加しましたが、観測していないsampleを補間・生成しません。試験途中のsourceや同じ保存観測の再評価は独立成功数へ合算しません。
+
+**BREAKING RISK（明示オプション内）:** startup/staged登録は時刻を読む段階とowner更新順序を変えます。従来の即時読取りを維持し、必要な試験だけで有効にします。source/clip変更、別登録、pause/seekや未消費世代は保留・無効化し、前回値で継続しません。一般的な原作初期化・pause/seek・source切替の再現、原作同一frame全面RGB、音声epoch契約は未成立です。
+
+`OriginalVerified=false / runtime_contract=false / SourceToViewerClockContract=false / Phase257cause=Unknown`と歴史的Pendingは維持します。[明示経路](Tools/OriginalLiveRendering/AUDIO_CLOCK_CHECKPOINT.md#明示startupとsource生成世代)を参照してください。
+
 ## PCM全ブロックと実filter入口の対応
 
 原作の追加runなしで、Viewerの2選択区間を全ブロック単位で採取しました。非無音371ブロックのfloat byteがprovider出力へ一意に一致し、範囲外の4件は拒否しました。原作で座標を確認済みの128 sampleは、同じ資産のViewer filter 1ブロックに全体が含まれました。ただし、その128 sample内の現在sampleを直接観測したowner更新は0件です。区間の対応を同一frame対応へ昇格していません。

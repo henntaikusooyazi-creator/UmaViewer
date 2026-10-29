@@ -73,6 +73,27 @@ namespace Gallop.Live
         // Explicit continuous-preview registration only. Null preserves the
         // existing deltaTime clock; a missing registered sample holds this update.
         [NonSerialized] public Func<float?> OriginalLiveTimeProvider;
+        // A separate ownership token keeps startup opt-in for existing users.
+        [NonSerialized] internal Func<float?> OriginalLiveStartupTimeProvider;
+        [NonSerialized] internal Action OriginalLiveAudioReady, OriginalLiveAfterOwnerUpdate;
+
+        // 0: retain the existing startup path; 1: hold; 2: clock accepted.
+        private int TryConsumeStartupTime()
+        {
+            if (_syncTime || IsRecordVMD || OriginalLiveTimeProvider == null ||
+                !ReferenceEquals(OriginalLiveStartupTimeProvider, OriginalLiveTimeProvider) ||
+                (sliderControl != null && (sliderControl.is_Touched || sliderControl.is_Outed))) return 0;
+            var registration = OriginalLiveTimeProvider;
+            float? sample = registration();
+            if (!sample.HasValue || !ReferenceEquals(OriginalLiveTimeProvider, registration) ||
+                !ReferenceEquals(OriginalLiveStartupTimeProvider, registration))
+            { _lateTimelineAppliedThisFrame = true; return 1; }
+            if (float.IsNaN(sample.Value) || float.IsInfinity(sample.Value) || sample.Value < 0)
+            { _lateTimelineAppliedThisFrame = true; throw new InvalidOperationException("An explicit startup time must be finite and nonnegative."); }
+            _liveCurrentTime = sample.Value;
+            _syncTime = true;
+            return 2;
+        }
 
         private bool TryAdvancePlaybackTime(float defaultDelta)
         {
@@ -437,6 +458,7 @@ namespace Gallop.Live
 
 
             liveMusic = UmaViewerAudio.ApplySound(string.Format(SONG_PATH, songid), -1);
+            OriginalLiveAudioReady?.Invoke();
         }
 
         public void Play()
@@ -500,7 +522,15 @@ namespace Gallop.Live
                     ExitLive();
                 }
 
-                if (_syncTime == false)
+                int startupClock = TryConsumeStartupTime();
+                if (startupClock == 1) return;
+                if (startupClock == 2)
+                {
+                    UI.ProgressBar.SetValueWithoutNotify(_liveCurrentTime / totalTime);
+                    OnTimelineUpdate(_liveCurrentTime);
+                    ApplyTimelineLateUpdate();
+                }
+                else if (_syncTime == false)
                 {
                     if(liveMusic.sourceList.Count == 0)
                     {
@@ -591,6 +621,7 @@ namespace Gallop.Live
                 // 这样既不会读取上一帧 LaserUpdateInfo，也不会读取上一帧相机姿态。
                 if (_stageController != null)
                     _stageController.AlterUpdateLaserControllers();
+                OriginalLiveAfterOwnerUpdate?.Invoke();
             }
         }
 

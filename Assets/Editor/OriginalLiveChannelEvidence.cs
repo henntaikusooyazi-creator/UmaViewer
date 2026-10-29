@@ -40,6 +40,8 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
     [Serializable] public sealed class Result
     {
         public bool complete, exactReplay, distinctCameras, sameOwnerPair;
+        public bool captured, verificationDeferred;
+        public long captureCompletedTicks, verificationBeginTicks, verificationEndTicks, imageWriteBeginTicks, imageWriteEndTicks;
         public bool exactRightAccumulationReplay, exactLeftAccumulationReplay;
         public long selectedSerial;
         public int submissionSerial, sharedInputId, baseCameraId, rightCameraId, leftCameraId;
@@ -59,6 +61,7 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
     readonly List<RenderTexture> targets = new List<RenderTexture>();
     readonly List<RenderTexture> capturedTargets = new List<RenderTexture>();
     readonly OriginalMultiCameraRenderer replay;
+    readonly bool deferVerification;
     OriginalLiveTimelineBridge.Frame selected;
     RenderTexture right, left, rightAccumulation, leftAccumulation, background, final, reference;
     bool disposed;
@@ -66,10 +69,17 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
 
     public OriginalLiveChannelEvidence(OriginalLiveContinuousRenderer preview, int rightTrack, int leftTrack,
         Func<OriginalLiveTimelineBridge.Frame, Camera> expectedBase)
+        : this(preview, rightTrack, leftTrack, expectedBase, false) { }
+
+    // Copies still occur at the exact draw stage. Only GPU replay/readback and
+    // CPU pixel checks may be postponed until the caller explicitly completes.
+    public OriginalLiveChannelEvidence(OriginalLiveContinuousRenderer preview, int rightTrack, int leftTrack,
+        Func<OriginalLiveTimelineBridge.Frame, Camera> expectedBase, bool deferVerification)
     {
         if (preview == null || expectedBase == null || rightTrack < 0 || leftTrack < 0 || rightTrack == leftTrack)
             throw new ArgumentException("Explicit distinct channels and expected base resolver required.");
         this.preview = preview; this.rightTrack = rightTrack; this.leftTrack = leftTrack; this.expectedBase = expectedBase;
+        this.deferVerification = deferVerification; Evidence.verificationDeferred = deferVerification;
         replay = new OriginalMultiCameraRenderer(Shader.Find(R.ShaderName), RenderTextureFormat.ARGBFloat);
         preview.TraceEmitted += Observe;
     }
@@ -82,7 +92,7 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
     }
     void Observe(OriginalLiveContinuousRenderer.Trace trace)
     {
-        if (disposed || Evidence.complete || Evidence.failure != null) return;
+        if (disposed || Evidence.captured || Evidence.complete || Evidence.failure != null) return;
         try
         {
             var step = trace.Submission;
@@ -126,7 +136,9 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
             if (step.Step == R.Stage.FinalCompositeDrawn)
             {
                 Copy(step, step.Output, final, 2, "two-channel.private.png");
-                Verify(); Evidence.complete = true; preview.TraceEmitted -= Observe;
+                Evidence.captured = true; Evidence.captureCompletedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+                preview.TraceEmitted -= Observe;
+                if (!deferVerification) CompleteDeferredVerification();
             }
         }
         catch (Exception e) { Evidence.failure = e.ToString(); preview.TraceEmitted -= Observe; throw; }
@@ -194,12 +206,25 @@ public sealed class OriginalLiveChannelEvidence : IDisposable
             Evidence.rightOnlyCoveragePixels > 0 && Evidence.leftOnlyCoveragePixels > 0 && Evidence.baseOnlyCoveragePixels > 0,
             "Exact replay and independent visible contributions from all three explicit camera roles required.");
     }
+    public void CompleteDeferredVerification()
+    {
+        if (disposed) throw new ObjectDisposedException(nameof(OriginalLiveChannelEvidence));
+        Require(Evidence.captured && Evidence.failure == null, "All immutable stage copies must be captured before verification.");
+        if (Evidence.complete) return;
+        Evidence.verificationBeginTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { Verify(); Evidence.complete = true; }
+        catch (Exception e) { Evidence.failure = e.ToString(); throw; }
+        finally { Evidence.verificationEndTicks = System.Diagnostics.Stopwatch.GetTimestamp(); }
+    }
     public void Save(string output)
     {
         Require(Evidence.complete && Evidence.failure == null, "Completed channel evidence required.");
         Directory.CreateDirectory(output);
+        bool first = Evidence.imageWriteBeginTicks == 0;
+        if (first) Evidence.imageWriteBeginTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         for (int i = 0; i < Evidence.captures.Count; i++)
             Evidence.captures[i].pngSha256 = SaveImage(capturedTargets[i], Path.Combine(output, Evidence.captures[i].png));
+        if (first) Evidence.imageWriteEndTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         // Emit the receipt only after every independent image has been written.
         File.WriteAllText(Path.Combine(output, "channel-evidence.private.json"), JsonUtility.ToJson(Evidence, true));
     }

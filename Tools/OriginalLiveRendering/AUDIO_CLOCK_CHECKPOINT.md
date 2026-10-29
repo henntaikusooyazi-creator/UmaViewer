@@ -1,5 +1,25 @@
 # 明示checkpointからの音声時計
 
+## 明示startupとsource生成世代
+
+`OriginalLiveAudioClock.EnableStartupConsumption()`は、現在の登録が所有する初回Director同期を同じ音声providerへ通します。登録が外れた、値が欠けた、非有限・負値だった場合は更新を保留し、初回late-onlyを生成しません。旧constructorだけを使う経路は従来のままです。
+
+`EnableStagedSourceConsumption()`はさらに、InitializeMusicの実ApplySound後・Play前の値を第1世代として保存します。以後は実owner更新完了後のAudioSourceを読み、次更新がその世代を一度だけ消費します。bootstrapが必要な場合も実APIを読み、その回は保留します。source/clip変更、登録の所有権変更、未消費世代の上書きは無効化し、自動的な再bindやリセットで補完しません。対象は明示された単一の通常再生lifetimeです。
+
+`SourceReadUnityFrame/Stage/Serial`とsource読取りのQPC/DSP区間を保持し、`SampledUnityFrame`と`ConsumeBeginTicks/EndTicks`は消費側の情報として別に記録します。`SourceCaptured`は実取得後のmain-thread診断eventです。観測例外は別counterへ記録し、取得値を置き換えません。既存の即時読取りではstage/serialと消費側区間を0のまま保持します。
+
+wrapperの`-AudioClockStartup -AudioClockStaged`は明示指定です。stagedにはstartup、startupにはaudio clockが必要です。`-DeferChannelEvidence`は描画直後のコピーを維持し、channel replay・PNG保存だけを自然復帰後へ移します。保存済みコピーが揃った状態と検証成功を別に扱い、既定の即時検証を残しています。
+
+最終ソースで142秒・3,341描画（音声3,258、明示tail83）、12/12 key、late-only・staged無効化・observer failure・fault・例外0です。実source生成3,258件と消費／owner／submission3,258件が対応し、先頭の実取得はPlay前、消費は次Unity frameでした。後段channel replayも成立しています。比較用の先行startup-only試験は10/12でFailedを保持し、その後のdeferred試験の12/12成功と区別します。同期preview保存は残り、先頭後の実source進行に大きな間隔も観測しています。
+
+保存済み原作先頭getterの入力・明示初期stateによる計算8成分と、Viewerの自然な最初の採用state・ownerがbit一致しました。原作で次getterまで保持される6成分も保存snapshotと直接一致します。previous/elapsedは次Updateの前処理で変化するため同じ処理位置として比較しません。初期stateの一般生成規則や同一GPU frameの証明ではなく、別runの描画帰属をこの1遷移へ流用しません。
+
+run92では先頭8 getterを同一owner/source/threadで連続取得し、保持6成分×7遷移とViewer先頭の計算8成分も一致しました。後続1件は非連続として分離します。既存hookの有効化が先頭の対象範囲に間に合わず、GPU command世代joinは0件です。外側`internal_wait_unreached`とmetadata不変条件の失敗を維持し、保存時計だけの資格化に限定しました。21 hook解除・remaining 0・drain・code pins・通常終了後の所有配備復元は実行時保持handle復旧の成功ではありません。先頭採取用native試験は継承67件を含む86件、コピー世代27件、wireの限定45件PASSで、新規原作観測数へ合算しません。
+
+次の有限edgeは、Play前に資格化済みの描画観測を有効にし、実先頭getterと同じownerのparameter／コピー世代を採取できるかです。今回の短い受付範囲を広げたり、後半の別ownerを先頭へ読み替えたりしません。既存run89のGPU成功とrun92の先頭時計を同一frameとして接合しません。
+
+**BREAKING RISK:** 明示登録時はproducerとconsumerの更新順序が変わります。従来APIと未登録時は保持し、seek/pause/切替の原作再現には拡張しません。現在ソースのControl/GPU636件は明示原作時計入力も含むTestOnly検証で、GPU geometry/camera/maskは人工入力です。公開PCM Python79件PASSとともに自然原作RGBの成功数へ数えません。`SourceToViewerClockContract=false`と全false/Unknown gates・過去Pendingを維持します。
+
 ## 全PCMブロックと読取り段階の追加資格化
 
 追加のViewer採取では、従来のブロック先頭128 sampleではなく、選択区間のfilter入力全体を有限配列へコピーしました。providerと非無音371ブロックがfloat byte一致し、4件は選択範囲外として拒否しています。同じ資産上の原作既知128 sample全体がViewerの1ブロックに含まれました。これは区間包含であり、現在sampleのowner観測はその原作区間内0件のままです。

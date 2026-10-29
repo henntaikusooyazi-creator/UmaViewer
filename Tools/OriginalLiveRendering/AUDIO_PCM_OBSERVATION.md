@@ -4,6 +4,12 @@
 
 ## 全ブロックと読取り段階の保存監査
 
+`pcm_source_domain.py`は`round_float32(sample / rate)`の厳密な逆像を、隣接float32の中点・nearest-evenの端点と有理数算術で求めます。正当化したclip範囲と実観測sample集合だけを対象にし、最近傍sample、一定buffer刻み、float秒へのepsilonで一致を作りません。この数式がUnityのすべての再生状態を表すという保証でもありません。source値が同じでも、owner・DSP/filter・GPU frameが一致するとは認定しません。
+
+明示staged再生では`pcm-source.private.json`へ実producer世代を保存し、`pcm-clock.private.json`のsource-read段階とconsume段階、owner・selected／submissionを照合します。別のUnity frameに属する読取りを同じframeのAPI読取りとして記録しません。最終自然試験の3,258世代で実読取り→一度の消費→owner／submissionが対応しました。これはViewer内部のlifetime保証に限定し、原作run89の自然tuple一致0件と原作同一frame全面RGB未成立を維持します。
+
+今回の公開Pythonは既存60＋追加19の79件PASS、3 moduleの149 statements・74 branchesは未通過0です。原作数値や媒体・private observerは含まず、公開fixtureは人工値です。
+
 `Validation/PcmPhase/pcm_content_match.py`は、明示したchannel数・coverageを持つPCM float bytesから、非無音の完全一致位置を探します。探索範囲内で一致候補が複数なら拒否し、未採取範囲やsample境界外の一致を採用しません。一意性は入力した選択範囲内のものです。媒体の解析・追加decode・原作プロセスへの接続は行いません。
 
 `pcm_phase_audit.py`は保存済みの全filterブロックと、同じcapture lifetimeのsource/clip・現在sample・DSP読取・owner/submission記録を監査する補助関数です。sampleはchannelあたり、PCMはinterleaved float32 little endianです。providerは4 MiB以下、filter保存全体も4 MiB以下、各ブロックは128〜2,048 sample、最大256ブロック、選択区間は最大4秒です。省略した末尾、無音、曖昧な一致、違うsource/clip、単位違い、時刻逆順を拒否します。

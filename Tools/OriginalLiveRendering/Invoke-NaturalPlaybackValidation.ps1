@@ -7,6 +7,9 @@ param(
     [ValidateRange(-1, 7)][int] $LeftTrack = -1,
     [switch] $FrameInputs,
     [switch] $AudioClock,
+    [switch] $AudioClockStartup,
+    [switch] $AudioClockStaged,
+    [switch] $DeferChannelEvidence,
     [switch] $AudioPcm,
     [string] $AudioClockCheckpoint,
     [switch] $AudioClockTailToExistingDirector,
@@ -14,6 +17,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($AudioClockTailToExistingDirector -and !$AudioClock) { throw 'An explicit audio clock is required for the tail policy.' }
+if ($AudioClockStartup -and !$AudioClock) { throw 'Startup consumption requires the explicit audio clock.' }
+if ($AudioClockStaged -and !$AudioClockStartup) { throw 'Staged source consumption requires explicit startup ownership.' }
+if ($DeferChannelEvidence -and $LeftTrack -lt 0) { throw 'Deferred channel evidence requires two explicit channels.' }
 if ($AudioClockCheckpoint -and !$AudioClock) { throw 'A clock checkpoint requires the explicit audio clock.' }
 if ($AudioPcm -and !$AudioClock) { throw 'PCM observation requires the explicit audio clock.' }
 if ($RightTrack -eq $LeftTrack) { throw 'Explicit ordered channels must be distinct.' }
@@ -57,6 +63,9 @@ try {
     $arguments += @('-liveRightTrack', $RightTrack, '-liveLeftTrack', $LeftTrack)
     if ($FrameInputs) { $arguments += @('-liveFrameInputs', 'true') }
     if ($AudioClock) { $arguments += @('-liveAudioClock', 'true') }
+    if ($AudioClockStartup) { $arguments += @('-liveAudioClockStartup', 'true') }
+    if ($AudioClockStaged) { $arguments += @('-liveAudioClockStaged', 'true') }
+    if ($DeferChannelEvidence) { $arguments += @('-liveDeferChannelEvidence', 'true') }
     if ($AudioPcm) { $arguments += @('-liveAudioPcm', 'true') }
     if ($AudioClockCheckpoint) { $arguments += @('-liveClockCheckpoint', ('"' + $checkpoint + '"')) }
     if ($AudioClockTailToExistingDirector) { $arguments += @('-liveAudioClockTailToExistingDirector', 'true') }
@@ -80,6 +89,13 @@ if ($summary.status -ne 'NaturalViewerPlaybackCompleted') { throw 'Natural Viewe
 if ($AudioClock -and (!$summary.audioClockRequested -or ($summary.audioClockJoined + $summary.legacyTailFrames) -ne $summary.validOwnerFrames -or
         $summary.audioClockRejected -ne 0 -or $summary.audioClockFailures -ne 0 -or $summary.audioClockReads -le 100)) {
     throw 'Current Viewer audio -> owner -> rendered serial did not pass.'
+}
+if ($AudioClockStartup -and (!$summary.audioClockStartupRequested -or $summary.warmupLateOnlyFrames -ne 0)) {
+    throw 'The explicit startup clock did not own the initial update.'
+}
+if ($AudioClockStaged -and (!$summary.audioClockStagedRequested -or $summary.stagedSourceConsumes -ne $summary.audioClockJoined -or
+        $summary.stagedSourceCaptures -lt $summary.stagedSourceConsumes -or $summary.stagedSourceInvalidations -ne 0 -or $summary.sourceCaptureObserverFailures -ne 0)) {
+    throw 'The staged producer/consumer lifetime did not join the actual owner updates.'
 }
 if ($FrameInputs) {
     $inputs = Get-Content -Raw -LiteralPath (Join-Path $output 'frame-inputs.private.json') | ConvertFrom-Json
