@@ -1,5 +1,15 @@
 # 明示checkpointからの音声時計
 
+## 同一ゲームプロセスでの採取切替と先頭frameの境界
+
+原作の描画観測をPlay前に準備し、所有observerを同一PID・生成時刻内で再利用する制御へ分離しました。3ジョブの間のゲーム再起動は0で、native workerとhook／resourceの終了証拠を毎回要求しています。先行Pendingの受入条件を緩めたものではありません。
+
+最初の全parameter窓では後続入力が先頭枠を上書きしてread上限へ到達しました。次の独立ジョブでは実先頭getterと同じframeだけへ限定し、parameter保存0件・世代join0件、上限到達0でした。停止・保持handle復旧は成功しましたが、先頭getterとGPU drawの対応は未成立です。そのframeへ近傍のparameterを流用していません。
+
+次は、先頭getter後に実際に現れた最初のparameter frameを別profileで選び、その同じframeに一意な完了getterがある場合だけ結合する準備です。欠落・複数候補はUnknownのままにします。旧same-first-frame判定を成功へ変更せず、次profileは接続前PendingでARMしていません。
+
+制御待機期限による再起動を減らす8時間待機版と、通常終了後だけの所有配備更新も用意しました。実機soak・更新版の実採取は未確認です。[汎用部品と試験範囲](Validation/ResidentSession/README.md)を参照してください。Viewerのclock演算や生成／消費順序は今回変更せず、自然epoch、同一frame RGB、各false／Unknownと歴史的Pendingを維持します。
+
 ## 明示startupとsource生成世代
 
 `OriginalLiveAudioClock.EnableStartupConsumption()`は、現在の登録が所有する初回Director同期を同じ音声providerへ通します。登録が外れた、値が欠けた、非有限・負値だった場合は更新を保留し、初回late-onlyを生成しません。旧constructorだけを使う経路は従来のままです。

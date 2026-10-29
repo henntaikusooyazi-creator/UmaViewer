@@ -4,6 +4,16 @@
 
 > この文書は独立検証ブランチ `codex/validate-original-live-integration` の状態です。公開済み `feature/original-live-rendering` は `781ef89`（7コミット）のまま保持しています。
 
+## 採取のたびにゲームを再起動しない運用
+
+所有observerを上限付きの常駐制御へ改修し、同じ原作PID・生成時刻のまま3ジョブを実行しました。ジョブ間のゲーム再起動は0。各ジョブでnative worker終了、handle／registry閉鎖、hook停止・drain・code復元・所有resource retireを確認してから次へ進めています。外側Pendingの採取も、停止証拠と混同せず元判定を保持します。最後のジョブは`StopCompleted`／保持handle復旧が成立しました。
+
+実先頭getterと同じUnity frameに絞った対象parameter保存は0件、描画世代joinも0件です。このframeに描画があると仮定せず、実際に最初の対象parameterが現れるframeを選ぶ別profileを準備しましたが、未実行です。原作との新しい自然RGB一致は得ていません。
+
+実機で使った版の制御待機10分が次の準備中に切れたため、制御待機だけ8時間とした版をビルドしました。現在のゲームを閉じず、通常終了後・ゲーム不在時だけ所有DLL／所有設定をhash照合して更新する待機処理を起動しています。8時間soakと更新版の実採取は未確認です。最初の試作のreceipt確定順序の不備、途中の上限到達、接続前Pendingは別記録のまま保持します。
+
+公開は[汎用状態機械、取消validator、所有ファイル更新と閉鎖試験](Tools/OriginalLiveRendering/Validation/ResidentSession/README.md)に限ります。131＋36 nativeチェック、取消24件、所有更新42チェック、私有watcher9チェックがPASS。原作固有コード・データや外部attach経路は公開せず、Viewer runtime／renderer／shaderは変更していません。Core13＋原作4の保護hash、成功ブランチ、既存DLLの未stage削除を保持しました。過去の636件・142秒Viewer再生・RGB比較は今回の再実行へ加算しません。false／Unknown flagsと歴史的Pendingも維持します。
+
 ## 音声の生成・消費段階を分離した自然更新
 
 明示オプションに限り、音声初期化後・Play前の実AudioSource値を保存し、続くowner更新で一度だけ消費する経路を追加しました。以後は前のowner更新後に実際に読んだ値を、source/clip・生成serial・読取りframe・消費frameを分けて渡します。秒数・sample・固定frameの補正ではありません。先頭のDirector同期も同じ登録で実Controlへ供給でき、旧constructorと未登録時の時計は保持しています。
